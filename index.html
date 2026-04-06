@@ -105,6 +105,9 @@
       { bg: '#2a7a6a', text: '#ffffff' },
     ];
 
+    const API_BASE = window.API_BASE || 'http://localhost:8000/api';
+    const DEFAULT_INVENTORY = ['breadboard', 'arduino nano', 'led', '220Ω resistor', 'jumper wire', 'usb cable'];  
+
     const AppContainer = ({ children, bg = '#f8fafc' }) => (
       <div className="flex justify-center items-center min-h-screen bg-[#171923] p-4 sm:p-8">
         <div
@@ -118,6 +121,55 @@
         </div>
       </div>
     );
+
+    // AR overlay renderer for backend-returned instructions
+    const OverlayCanvas = ({ overlay, zoom = 1 }) => {
+      if (!overlay) return null;
+
+      const boxStyle = (bbox, color = '#4ade80') => ({
+        left: `${(bbox.x - bbox.w / 2) * 100}%`,
+        top: `${(bbox.y - bbox.h / 2) * 100}%`,
+        width: `${bbox.w * 100 * zoom}%`,
+        height: `${bbox.h * 100 * zoom}%`,
+        borderColor: color,
+      });
+
+      return (
+        <div className="absolute inset-0 pointer-events-none z-20">
+          {overlay.highlight_box && (
+            <div className="absolute border-2 border-dashed rounded-2xl shadow-[0_0_20px_rgba(74,222,128,0.45)]" style={boxStyle(overlay.highlight_box)} />
+          )}
+
+          {(overlay.detected_boxes || []).map((item, idx) => (
+            <div key={idx} className="absolute border rounded-xl" style={boxStyle(item.bbox, '#f59e0b')}>
+              <div className="absolute -top-5 left-0 text-[9px] px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 font-semibold">{item.label}</div>
+            </div>
+          ))}
+
+          {(overlay.hand_points || []).map((pt, idx) => (
+            <div key={idx} className="absolute w-4 h-4 rounded-full bg-cyan-400/80 ring-4 ring-cyan-300/30" style={{ left: `calc(${pt.x * 100}% - 8px)`, top: `calc(${pt.y * 100}% - 8px)` }} />
+          ))}
+
+          {(overlay.arrows || []).map((arrow, idx) => {
+            const left = `${arrow.x2 * 100}%`;
+            const top = `${arrow.y2 * 100}%`;
+            const height = `${Math.max(20, (arrow.y2 - arrow.y1) * 100 * 3)}%`;
+            return (
+              <div key={idx} className="absolute flex flex-col items-center" style={{ left, top: `calc(${arrow.y1 * 100}% - 8px)` }}>
+                <div className="w-1 bg-orange-400 rounded-full" style={{ height }}></div>
+                <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-t-[12px] border-l-transparent border-r-transparent border-t-orange-400"></div>
+              </div>
+            );
+          })}
+
+          {overlay.hint && (
+            <div className="absolute left-4 top-4 max-w-[78%] bg-[#1e2229]/80 text-white text-[11px] px-3 py-2 rounded-xl backdrop-blur-sm shadow-lg">
+              {overlay.hint}
+            </div>
+          )}
+        </div>
+      );
+    };    
 
     // ─── Screen 1: Home ──────────────────────────────────────────────────────────
     const ScreenHome = ({ onScan }) => (
@@ -481,8 +533,10 @@ Return ONLY the JSON array, nothing else.`
       );
     };
 
-    // ─── Screen 3: Feasible Plans ────────────────────────────────────────────────
-    const ScreenPlans = ({ onBack, onStart, detectedParts }) => (
+    // ─── Screen 3 & Screen 4: Feasible Plans + Corresponding Steps ────────────────────────────────────────────────
+    // [ADDED for screen4 backend integration] screen3 now fetches dynamic feasible plans from backend,
+    // instead of staying fully hard-coded.
+    const ScreenPlans = ({ onBack, onStart, detectedParts, plans, plansLoading, onRefreshPlans }) => (
       <AppContainer bg="#ffffff">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2">
@@ -503,118 +557,391 @@ Return ONLY the JSON array, nothing else.`
               </div>
             )}
 
-            <p className="text-sm text-slate-600 mb-4">Based on your scanned materials and settings.</p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-slate-600">Based on your scanned materials and settings.</p>
+              <button onClick={onRefreshPlans} className="text-[11px] px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50">Refresh</button>
+            </div>
+
+            {plansLoading && <p className="text-sm text-slate-500 mb-3">Loading feasible plans...</p>}
 
             <div className="space-y-4">
-              <div className="p-4 border border-teal-100 rounded-2xl bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300 transition-colors" onClick={onStart}>
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <span className="px-2 py-0.5 bg-[#e4f6ef] text-[#476e62] text-[9px] font-bold rounded-sm uppercase tracking-wider">Recommended</span>
-                    <h3 className="font-semibold text-slate-800 mt-1">Plan A (Fastest)</h3>
+              {plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className={`p-4 rounded-2xl transition-colors ${plan.available ? 'border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300' : 'bg-[#f8fafc] border border-slate-100 opacity-75'}`}
+                  onClick={() => plan.available && onStart(plan)}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <span className={`px-2 py-0.5 text-[9px] font-bold rounded-sm uppercase tracking-wider ${plan.available ? 'bg-[#e4f6ef] text-[#476e62]' : 'bg-slate-200 text-slate-400'}`}>{plan.badge}</span>
+                      <h3 className={`font-semibold mt-1 ${plan.available ? 'text-slate-800' : 'text-slate-400'}`}>{plan.name}</h3>
+                    </div>
+                    <span className={`font-semibold text-sm ${plan.available ? 'text-[#476e62]' : 'text-slate-400'}`}>{plan.time_estimate}</span>
                   </div>
-                  <span className="text-[#476e62] font-semibold text-sm">10-12m</span>
+                  <p className="text-xs text-slate-500 leading-relaxed mt-1">{plan.description}</p>
+                  {!plan.available && plan.missing_parts?.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <IconAlertTriangle size={12} color="#d9a08e" />
+                      <p className="text-[11px] font-medium text-[#d9a08e]">Missing required part: {plan.missing_parts.join(', ')}</p>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 leading-relaxed mt-1">Arduino blink + single LED setup. Direct and efficient.</p>
-              </div>
-
-              <div className="p-4 bg-[#f8fafc] border border-slate-100 rounded-2xl opacity-75">
-                <div className="mb-2">
-                  <span className="px-2 py-0.5 bg-slate-200 text-slate-400 text-[9px] font-bold rounded-sm uppercase tracking-wider">Unavailable</span>
-                  <h3 className="font-semibold text-slate-400 mt-1">Plan B (Double LED)</h3>
-                </div>
-                <div className="flex items-center gap-1.5 mt-2">
-                  <IconAlertTriangle size={12} color="#d9a08e" />
-                  <p className="text-[11px] font-medium text-[#d9a08e]">Missing required part: extra resistor</p>
-                </div>
-              </div>
-
-              <div className="p-4 border border-slate-100 rounded-2xl bg-white shadow-sm cursor-pointer hover:border-slate-300 transition-colors">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-semibold text-slate-800">Plan C (Most Elaborative)</h3>
-                  <span className="text-slate-400 font-semibold text-sm">25m</span>
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed mt-1">Includes decorative blinking patterns and power-save mode.</p>
-              </div>
+              ))}
             </div>
           </div>
 
           <div className="mt-auto px-6 mb-8">
-            <button onClick={onStart} className="w-full py-4 rounded-xl text-white font-medium shadow-md" style={{ backgroundColor: theme.darkTeal }}>
-              Start Plan A
+            <button
+              onClick={() => plans.find(p => p.available) && onStart(plans.find(p => p.available))}
+              className="w-full py-4 rounded-xl text-white font-medium shadow-md disabled:opacity-50"
+              style={{ backgroundColor: theme.darkTeal }}
+              disabled={!plans.some(p => p.available)}
+            >
+              {plans.some(p => p.available) ? `Start ${plans.find(p => p.available).name}` : 'No available plan'}
             </button>
           </div>
         </div>
       </AppContainer>
     );
 
-    // ─── Screen 4: AR Tracking Coach ─────────────────────────────────────────────
-    const ScreenTracking = ({ onBack }) => (
-      <AppContainer bg={theme.coachBg}>
-        <div className="flex-1 flex flex-col relative h-full">
-          <div className="px-4 py-3 bg-[#1e2229]/80 backdrop-blur-md rounded-xl mx-2 mt-2">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-1.5 h-1.5 bg-[#4ade80] rounded-full blink"></div>
-              <span className="text-[10px] font-bold text-white tracking-widest">TRACKING ON</span>
-            </div>
-            <div className="flex gap-1 mb-1">
-              <div className="h-1 flex-1 rounded-full bg-[#70a996]"></div>
-              <div className="h-1 flex-1 rounded-full bg-slate-600"></div>
-              <div className="h-1 flex-1 rounded-full bg-slate-600"></div>
-              <div className="h-1 flex-1 rounded-full bg-slate-600"></div>
-            </div>
-            <div className="flex justify-between text-[7px] text-slate-300 font-semibold uppercase">
-              <span>Place LED</span><span>Wire Resistor</span><span>Connect Nano</span><span>Test</span>
-            </div>
-          </div>
+    // [ADDED for screen4 backend integration] dynamic screen4 using backend session state,
+    // while keeping the original layout and buttons as much as possible.
+    const ScreenTracking = ({ onBack, sessionData, analysis, refImage, onRepeat, onZoom, onRefWiring, onNext, onTogglePause, onAnalyzeNow }) => {
+      const videoRef = useRef(null);
+      const canvasRef = useRef(null);
+      const streamRef = useRef(null);
+      const intervalRef = useRef(null);
+      const [cameraReady, setCameraReady] = useState(false);
 
-          <div className="mt-auto bg-[#fafafa] rounded-t-3xl rounded-b-[32px] p-5 shadow-2xl pb-8 mx-2 mb-2 relative">
-            <button onClick={onBack} className="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-1 rounded-full transition-colors">
-              <IconX size={18} />
-            </button>
-            <div className="flex justify-between items-start mt-2">
-              <div className="flex-1 pr-4">
-                <span className="text-[9px] font-bold text-[#476e62] tracking-wider uppercase">Step 1 of 4</span>
-                <h2 className="text-[20px] font-bold text-slate-900 leading-tight mt-1 mb-1">Place the LED on the breadboard</h2>
-                <p className="text-[13px] text-slate-500 italic">Insert across the center gap.</p>
+      const step = sessionData?.step;
+      const currentIndex = sessionData?.current_step_index || 0;
+      const progressLabels = sessionData?.progress_labels || [];
+
+      const captureFrame = useCallback(() => {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (!video || !canvas || video.videoWidth === 0) return null;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return {
+          image_base64: canvas.toDataURL('image/jpeg', 0.75),
+          image_width: canvas.width,
+          image_height: canvas.height,
+        };
+      }, []);
+
+      useEffect(() => {
+        let mounted = true;
+        const startCamera = async () => {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+              audio: false,
+            });
+            if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+            streamRef.current = stream;
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+              await videoRef.current.play();
+            }
+            setCameraReady(true);
+          } catch (err) {
+            console.error('Tracking camera error:', err);
+          }
+        };
+
+        startCamera();
+        return () => {
+          mounted = false;
+          if (intervalRef.current) clearInterval(intervalRef.current);
+          if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+        };
+      }, []);
+
+      useEffect(() => {
+        if (!cameraReady || !sessionData?.session_id) return;
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = setInterval(() => {
+          const frame = captureFrame();
+          if (frame && !sessionData?.paused) {
+            onAnalyzeNow(frame);
+          }
+        }, 1800);
+        return () => {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+        };
+      }, [cameraReady, sessionData?.session_id, sessionData?.paused, captureFrame, onAnalyzeNow]);
+
+      return (
+        <AppContainer bg={theme.coachBg}>
+          <div className="flex-1 flex flex-col relative h-full">
+            <div className="px-4 py-3 bg-[#1e2229]/80 backdrop-blur-md rounded-xl mx-2 mt-2">
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`w-1.5 h-1.5 rounded-full ${sessionData?.paused ? 'bg-yellow-400' : 'bg-[#4ade80]'} blink`}></div>
+                <span className="text-[10px] font-bold text-white tracking-widest">{sessionData?.paused ? 'TRACKING PAUSED' : 'TRACKING ON'}</span>
               </div>
-              <div className="w-16 h-16 bg-white border border-slate-200 rounded-xl shadow-sm flex items-center justify-center text-3xl shrink-0">💡</div>
+
+              <div className="flex gap-1 mb-1">
+                {progressLabels.map((_, idx) => (
+                  <div key={idx} className={`h-1 flex-1 rounded-full ${idx <= currentIndex ? 'bg-[#70a996]' : 'bg-slate-600'}`}></div>
+                ))}
+              </div>
+              <div className="grid gap-1 text-[7px] text-slate-300 font-semibold uppercase" style={{ gridTemplateColumns: `repeat(${Math.max(progressLabels.length, 1)}, minmax(0, 1fr))` }}>
+                {progressLabels.map((label, idx) => <span key={label + idx} className="truncate">{label}</span>)}
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-3 mt-6 mb-6">
-              <button className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600">
-                <IconRotateCcw size={18} /><span className="text-[9px] font-medium mt-1.5">Repeat</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600">
-                <IconZoomIn size={18} /><span className="text-[9px] font-medium mt-1.5">Zoom</span>
-              </button>
-              <button className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600">
-                <IconBriefcase size={18} /><span className="text-[9px] font-medium mt-1.5">Ref Wiring</span>
-              </button>
+
+            <div className="relative mx-2 mt-3 rounded-3xl overflow-hidden border border-white/10 bg-[#1e2229] min-h-[360px] flex-1">
+              <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+              <canvas ref={canvasRef} className="hidden" />
+              {!cameraReady && <div className="absolute inset-0 bg-[#111418]/80 flex items-center justify-center text-white text-sm z-10">Requesting camera access...</div>}
+              <OverlayCanvas overlay={analysis?.overlay} zoom={sessionData?.zoom || 1} />
+
+              <div className="absolute left-4 right-4 bottom-4 bg-[#111418]/70 backdrop-blur-md rounded-2xl px-4 py-3 text-white shadow-xl z-30">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider text-emerald-300">Live detection</div>
+                    <div className="text-sm font-semibold">{analysis?.feedback || 'Waiting for frame analysis...'}</div>
+                  </div>
+                  <div className={`text-xs px-3 py-1 rounded-full font-semibold ${analysis?.matched ? 'bg-emerald-400 text-slate-900' : 'bg-white/10 text-white'}`}>
+                    {analysis?.matched ? 'Matched' : `${Math.round((analysis?.confidence || 0) * 100)}%`}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex gap-3">
-              <button className="flex-1 py-4 bg-[#111418] text-white rounded-2xl font-medium text-sm shadow-lg">Next</button>
-              <button className="px-5 bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-sm flex items-center justify-center">
-                <IconPause size={18} fill="currentColor" />
+
+            <div className="mt-auto bg-[#fafafa] rounded-t-3xl rounded-b-[32px] p-5 shadow-2xl pb-8 mx-2 mb-2 relative">
+              <button onClick={onBack} className="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-1 rounded-full transition-colors">
+                <IconX size={18} />
               </button>
+              <div className="flex justify-between items-start mt-2">
+                <div className="flex-1 pr-4">
+                  <span className="text-[9px] font-bold text-[#476e62] tracking-wider uppercase">Step {currentIndex + 1} of {sessionData?.total_steps || 0}</span>
+                  <h2 className="text-[20px] font-bold text-slate-900 leading-tight mt-1 mb-1">{step?.title || 'Loading step...'}</h2>
+                  <p className="text-[13px] text-slate-500 italic">{step?.subtitle || 'Preparing instructions...'}</p>
+                </div>
+                <div className="w-16 h-16 bg-white border border-slate-200 rounded-xl shadow-sm flex items-center justify-center text-3xl shrink-0">{step?.icon || '🛠️'}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-4 text-[11px] text-slate-600">
+                <div className="rounded-xl bg-slate-50 px-3 py-2">Scene match: <span className="font-semibold text-slate-800">{Math.round((analysis?.scene_match_score || 0) * 100)}%</span></div>
+                <div className="rounded-xl bg-slate-50 px-3 py-2">Hands detected: <span className="font-semibold text-slate-800">{analysis?.hands_detected || 0}</span></div>
+              </div>
+
+              {refImage && (
+                <div className="mt-4 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                  <img src={refImage} alt="Reference wiring" className="w-full h-36 object-cover" />
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3 mt-6 mb-6">
+                <button onClick={onRepeat} className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                  <IconRotateCcw size={18} /><span className="text-[9px] font-medium mt-1.5">Repeat</span>
+                </button>
+                <button onClick={onZoom} className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                  <IconZoomIn size={18} /><span className="text-[9px] font-medium mt-1.5">Zoom</span>
+                </button>
+                <button onClick={onRefWiring} className="flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                  <IconBriefcase size={18} /><span className="text-[9px] font-medium mt-1.5">Ref Wiring</span>
+                </button>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={onNext} className="flex-1 py-4 bg-[#111418] text-white rounded-2xl font-medium text-sm hover:bg-slate-800 transition-colors shadow-lg">Next</button>
+                <button onClick={onTogglePause} className="px-5 bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-sm flex items-center justify-center hover:bg-slate-50 transition-colors">
+                  <IconPause size={18} fill="currentColor" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </AppContainer>
-    );
+        </AppContainer>
+      );
+    };
 
     // ─── Root App ─────────────────────────────────────────────────────────────────
     function ARBuilderCoach() {
       const [screen, setScreen] = useState(1);
       const [detectedParts, setDetectedParts] = useState([]);
 
-      return (() => {
-        switch (screen) {
-          case 1: return <ScreenHome onScan={() => setScreen(2)} />;
-          case 2: return <ScreenScanning onBack={() => setScreen(1)} onConfirm={(parts) => { setDetectedParts(parts); setScreen(3); }} />;
-          case 3: return <ScreenPlans onBack={() => setScreen(2)} onStart={() => setScreen(4)} detectedParts={detectedParts} />;
-          case 4: return <ScreenTracking onBack={() => setScreen(3)} />;
-          default: return <ScreenHome onScan={() => setScreen(2)} />;
+      // [ADDED for screen4 backend integration] app-level state
+      const [plans, setPlans] = useState([]);
+      const [plansLoading, setPlansLoading] = useState(false);
+      const [selectedPlan, setSelectedPlan] = useState(null);
+      const [sessionData, setSessionData] = useState(null);
+      const [analysis, setAnalysis] = useState(null);
+      const [refImage, setRefImage] = useState(null);
+      const [error, setError] = useState('');
+      const [toast, setToast] = useState('');
+
+      const api = useCallback(async (path, options = {}) => {
+        const res = await fetch(`${API_BASE}${path}`, {
+          headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+          ...options,
+        });
+        if (!res.ok) {
+          let detail = 'Request failed';
+          try {
+            const data = await res.json();
+            detail = data.detail || detail;
+          } catch (e) {}
+          throw new Error(detail);
         }
-      })();
+        return res.json();
+      }, []);
+
+      const fetchPlans = useCallback(async (parts = detectedParts) => {
+        setPlansLoading(true);
+        setError('');
+        try {
+          const normalizedParts = (parts && parts.length > 0) ? parts : DEFAULT_INVENTORY;
+          const data = await api('/plans', {
+            method: 'POST',
+            body: JSON.stringify({ materials: normalizedParts, preferences: { mode: 'prototype' } })
+          });
+          setPlans(data.plans || []);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setPlansLoading(false);
+        }
+      }, [api, detectedParts]);
+
+      const startPlan = useCallback(async (plan) => {
+        setError('');
+        setRefImage(null);
+        try {
+          const normalizedParts = (detectedParts && detectedParts.length > 0) ? detectedParts : DEFAULT_INVENTORY;
+          const session = await api('/session/start', {
+            method: 'POST',
+            body: JSON.stringify({
+              plan_id: plan.id,
+              plan_name: plan.name,
+              inventory: normalizedParts,
+              preferences: { ar_mode: 'medium_prototype', source: 'screen3' }
+            })
+          });
+          setSelectedPlan(plan);
+          setSessionData(session);
+          setAnalysis(session.last_analysis || null);
+          setScreen(4);
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, detectedParts]);
+
+      const nextStep = useCallback(async () => {
+        if (!sessionData?.session_id) return;
+        try {
+          const data = await api(`/session/${sessionData.session_id}/step/next`, { method: 'POST', body: JSON.stringify({}) });
+          setSessionData(data);
+          setAnalysis(null);
+          setRefImage(null);
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      const repeatStep = useCallback(async () => {
+        if (!sessionData?.session_id) return;
+        try {
+          const data = await api(`/session/${sessionData.session_id}/step/repeat`, { method: 'POST', body: JSON.stringify({ replay_seconds: 5 }) });
+          setSessionData(data);
+          setToast('Replaying current guidance');
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      const zoomStep = useCallback(async () => {
+        if (!sessionData?.session_id) return;
+        try {
+          const data = await api(`/session/${sessionData.session_id}/step/zoom`, { method: 'POST', body: JSON.stringify({ delta: 0.2 }) });
+          setSessionData(data);
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      const togglePause = useCallback(async () => {
+        if (!sessionData?.session_id) return;
+        try {
+          const data = await api(`/session/${sessionData.session_id}/step/toggle-pause`, {
+            method: 'POST',
+            body: JSON.stringify({ paused: !sessionData.paused })
+          });
+          setSessionData(data);
+          setToast(data.paused ? 'Paused' : 'Resumed');
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      const fetchRefWiring = useCallback(async () => {
+        if (!sessionData?.session_id) return;
+        try {
+          const data = await api(`/session/${sessionData.session_id}/ref-wiring`, {
+            method: 'POST',
+            body: JSON.stringify({ session_id: sessionData.session_id })
+          });
+          setRefImage(data.image_url);
+          setToast(data.source === 'openai' ? 'AI reference generated' : 'Fallback reference generated');
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      const analyzeCurrentFrame = useCallback(async (frame) => {
+        if (!sessionData?.session_id) return;
+        try {
+          const result = await api('/frame/analyze', {
+            method: 'POST',
+            body: JSON.stringify({
+              session_id: sessionData.session_id,
+              image_base64: frame.image_base64,
+              image_width: frame.image_width,
+              image_height: frame.image_height,
+            })
+          });
+          setAnalysis(result);
+        } catch (err) {
+          setError(err.message);
+        }
+      }, [api, sessionData]);
+
+      useEffect(() => {
+        if (!toast) return;
+        const t = setTimeout(() => setToast(''), 2000);
+        return () => clearTimeout(t);
+      }, [toast]);
+
+      useEffect(() => {
+        if (screen === 3) {
+          fetchPlans();
+        }
+      }, [screen, fetchPlans]);
+
+      return (
+        <>
+          {(() => {
+            switch (screen) {
+              case 1:
+                return <ScreenHome onScan={() => setScreen(2)} />;
+              case 2:
+                return <ScreenScanning onBack={() => setScreen(1)} onConfirm={(parts) => { setDetectedParts(parts); setScreen(3); }} />;
+              case 3:
+                return <ScreenPlans onBack={() => setScreen(2)} onStart={startPlan} detectedParts={detectedParts} plans={plans} plansLoading={plansLoading} onRefreshPlans={() => fetchPlans()} />;
+              case 4:
+                return <ScreenTracking onBack={() => setScreen(3)} sessionData={sessionData} analysis={analysis} refImage={refImage} onRepeat={repeatStep} onZoom={zoomStep} onRefWiring={fetchRefWiring} onNext={nextStep} onTogglePause={togglePause} onAnalyzeNow={analyzeCurrentFrame} />;
+              default:
+                return <ScreenHome onScan={() => setScreen(2)} />;
+            }
+          })()}
+
+          {error && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99] bg-red-500 text-white text-sm px-4 py-2 rounded-full shadow-lg">{error}</div>}
+          {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99] bg-slate-900 text-white text-sm px-4 py-2 rounded-full shadow-lg">{toast}</div>}
+        </>
+      );
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
