@@ -16,6 +16,10 @@ The current prototype is split into:
 
 ---
 
+This project's code was developed with the help of ChatGPT and Claude.
+
+---
+
 ## Repository files
 
 - `app.py` — backend server and prototype computer vision / AR guidance logic
@@ -232,3 +236,4 @@ Expected visible elements:
 - Click **Ref Wiring** to play a reference image (either with a configured image model or a fallback SVG reference image)
 - Click **Next** to proceed to the next step
 - Click **Pause** to stop the instruction
+
