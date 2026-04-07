@@ -198,7 +198,7 @@ Expected result:
 ## 2. Scanning screen
 
 1. Allow browser camera access
-2. Point the camera at electronics components if available
+2. Point the camera at electronics components if available. 
 3. Wait for labels to appear
 4. Click **Confirm Parts**
 
@@ -221,7 +221,8 @@ The frontend and backend both use a default electronics inventory when needed:
 - jumper wire
 - usb cable
 
-With that inventory, the remaining prototype flow can still be reproduced.
+So long as the user manually inputs or types a list of items separated by commas from this inventory, 
+the remaining prototype flow can still be reproduced.
 
 ---
 ## 3. Feasible plans screen
