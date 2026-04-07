@@ -222,10 +222,19 @@ The frontend and backend both use a default electronics inventory when needed:
 - usb cable
 
 So long as the user manually inputs or types a list of items separated by commas from this inventory, 
-the remaining prototype flow can still be reproduced.
+the remaining prototype flow can still be reproduced. That is, if the user would prefer to input their
+list of available materials rather than have their materials scanned by the system, 
+the user can type a series of items into the white text field and then select "Use Typed List." 
+Subsequently, the user should click the orange "Confirm" button at the buttom of the screen once they are
+certain that their list includes all their available materials or parts.
 
 ---
 ## 3. Feasible plans screen
+After the user's materials have been identified by the system, the user is taken to this screen where they can
+select one plan to follow out of the available plans, which are determined based on which of the plan's required materials 
+the user has. 
+- Select your preferred plan among the available plans.
+- Click the green "Start Plan..." button on the buttom of the screen to begin the plan's tutorial.
 
 ---
 
