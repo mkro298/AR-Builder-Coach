@@ -4,6 +4,9 @@ import json
 import math
 import os
 import uuid
+
+from dotenv import load_dotenv
+load_dotenv()
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -833,6 +836,40 @@ def get_cached_reference(session_id: str, step_id: str) -> Dict[str, Any]:
     if step_id not in session.reference_cache:
         raise HTTPException(status_code=404, detail="Reference not generated yet.")
     return {"image_url": session.reference_cache[step_id]}
+
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+
+class AnthropicProxyRequest(BaseModel):
+    model: str
+    max_tokens: int
+    messages: List[Dict[str, Any]]
+
+
+@app.post("/api/claude/messages")
+def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured.")
+    import urllib.request as _urllib_request
+
+    payload = json.dumps(req.model_dump()).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+    }
+    http_req = _urllib_request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with _urllib_request.urlopen(http_req) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 if __name__ == "__main__":
