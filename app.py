@@ -838,7 +838,7 @@ def get_cached_reference(session_id: str, step_id: str) -> Dict[str, Any]:
     return {"image_url": session.reference_cache[step_id]}
 
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = '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'
 
 
 class AnthropicProxyRequest(BaseModel):
