@@ -28,6 +28,7 @@ except Exception:  # pragma: no cover
 # Configuration
 # =========================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 DEFAULT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
@@ -709,6 +710,7 @@ def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "openai_configured": bool(OPENAI_API_KEY),
+        "anthropic_configured": bool(ANTHROPIC_API_KEY),
         "available_plans": list(PLANS.keys()),
     }
 
@@ -838,9 +840,6 @@ def get_cached_reference(session_id: str, step_id: str) -> Dict[str, Any]:
     return {"image_url": session.reference_cache[step_id]}
 
 
-ANTHROPIC_API_KEY = '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'
-
-
 class AnthropicProxyRequest(BaseModel):
     model: str
     max_tokens: int
@@ -850,7 +849,7 @@ class AnthropicProxyRequest(BaseModel):
 @app.post("/api/claude/messages")
 def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
     if not ANTHROPIC_API_KEY:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured.")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured in .env")
     import urllib.request as _urllib_request
 
     payload = json.dumps(req.model_dump()).encode()
