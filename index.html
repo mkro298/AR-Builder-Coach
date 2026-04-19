@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AR Builder Coach Prototype</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -179,7 +179,7 @@
     ];
 
     // API_BASE points to the FastAPI backend, which holds the Anthropic key securely
-    const API_BASE = window.API_BASE || 'http://localhost:8000/api';
+    const API_BASE = window.API_BASE || 'https://10.2.127.252:8000/api';
     const DEFAULT_INVENTORY = ['breadboard', 'arduino nano', 'led', '220Ω resistor', 'jumper wire', 'usb cable'];
 
     // Material normalization map
@@ -242,16 +242,11 @@
 
 
     const AppContainer = ({ children, bg = '#f8fafc' }) => (
-      <div className="flex justify-center items-center min-h-screen bg-[#171923] p-4 sm:p-8">
-        <div
-          className="relative overflow-hidden shadow-2xl rounded-[40px] border-[8px] border-slate-900 no-scrollbar"
-          style={{ width: '390px', height: '844px', backgroundColor: bg, maxHeight: '90vh' }}
-        >
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-7 bg-slate-900 rounded-b-3xl z-50"></div>
-          <div className="h-full flex flex-col pt-10 pb-8 overflow-y-auto no-scrollbar">
-            {children}
-          </div>
-        </div>
+      <div
+        className="flex flex-col w-full overflow-y-auto no-scrollbar"
+        style={{ height: '100dvh', backgroundColor: bg }}
+      >
+        {children}
       </div>
     );
 
@@ -761,7 +756,7 @@ Return ONLY the JSON array, nothing else.`
         const startCamera = async () => {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+              video: { facingMode: 'environment' , width: { ideal: 1280 }, height: { ideal: 720 } },
               audio: false,
             });
             if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }

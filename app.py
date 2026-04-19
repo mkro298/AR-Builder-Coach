@@ -10,6 +10,7 @@ load_dotenv()
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -694,6 +695,9 @@ def get_step_payload(session: SessionState) -> Dict[str, Any]:
 # FastAPI app
 # =========================
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 app = FastAPI(title="AR Builder Coach Backend", version="1.0.0")
 
 app.add_middleware(
@@ -704,6 +708,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def serve_ui():
+    return FileResponse("index.html")  
 
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
@@ -874,4 +881,4 @@ def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host=API_HOST, port=API_PORT, reload=True)
+    uvicorn.run("app:app", host=API_HOST, port=API_PORT, reload=False, ssl_keyfile="key.pem", ssl_certfile="cert.pem")
