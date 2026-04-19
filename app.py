@@ -10,6 +10,7 @@ load_dotenv()
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -28,6 +29,7 @@ except Exception:  # pragma: no cover
 # Configuration
 # =========================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 DEFAULT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
@@ -693,6 +695,9 @@ def get_step_payload(session: SessionState) -> Dict[str, Any]:
 # FastAPI app
 # =========================
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 app = FastAPI(title="AR Builder Coach Backend", version="1.0.0")
 
 app.add_middleware(
@@ -703,12 +708,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def serve_ui():
+    return FileResponse("index.html")  
 
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "openai_configured": bool(OPENAI_API_KEY),
+        "anthropic_configured": bool(ANTHROPIC_API_KEY),
         "available_plans": list(PLANS.keys()),
     }
 
@@ -838,9 +847,6 @@ def get_cached_reference(session_id: str, step_id: str) -> Dict[str, Any]:
     return {"image_url": session.reference_cache[step_id]}
 
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-
-
 class AnthropicProxyRequest(BaseModel):
     model: str
     max_tokens: int
@@ -850,7 +856,7 @@ class AnthropicProxyRequest(BaseModel):
 @app.post("/api/claude/messages")
 def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
     if not ANTHROPIC_API_KEY:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured.")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured in .env")
     import urllib.request as _urllib_request
 
     payload = json.dumps(req.model_dump()).encode()
@@ -875,4 +881,4 @@ def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host=API_HOST, port=API_PORT, reload=True)
+    uvicorn.run("app:app", host=API_HOST, port=API_PORT, reload=False, ssl_keyfile="key.pem", ssl_certfile="cert.pem")
