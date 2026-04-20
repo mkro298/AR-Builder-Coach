@@ -1089,13 +1089,17 @@ Return ONLY the JSON array, nothing else.`
       const fetchPlans = useCallback(async (parts = detectedParts) => {
         setPlansLoading(true);
         setError('');
+
         try {
           const rawParts = (parts && parts.length > 0) ? parts : DEFAULT_INVENTORY;
           const normalizedParts = classifyMaterials(rawParts);
+          const materialsForRequest = normalizedParts.length > 0 ? normalizedParts : DEFAULT_INVENTORY;
+
           const data = await api('/plans', {
             method: 'POST',
-            body: JSON.stringify({ materials: normalizedParts, preferences: { mode: 'prototype' } })
+            body: JSON.stringify({ materials: materialsForRequest, preferences: { mode: 'prototype' } })
           });
+
           setPlans(data.plans || []);
         } catch (err) {
           setError(err.message);
