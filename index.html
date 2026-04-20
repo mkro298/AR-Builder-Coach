@@ -860,6 +860,58 @@ Return ONLY the JSON array, nothing else.`
       </AppContainer>
     );
 
+    const ScreenPlanLibrary = ({ onBack, onStart, plans, plansLoading, onRefreshPlans }) => (
+      <AppContainer bg="#ffffff">
+        <div className="flex-1 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2">
+            <button onClick={onBack} className="p-2 text-slate-800"><IconChevronLeft size={24} /></button>
+            <span className="font-semibold text-sm text-slate-800">Plan Library</span>
+            <div className="w-10"></div>
+          </div>
+
+          <div className="px-6 mt-4">
+            <h2 className="text-2xl font-semibold text-slate-800">Explore Plans</h2>
+            <p className="text-sm text-slate-500 mt-2">
+              Browse build ideas first, then start from the project you want to make.
+            </p>
+
+            <div className="flex items-center justify-between mt-5 mb-4">
+              <p className="text-sm text-slate-600">Available beginner-friendly build plans.</p>
+              <button
+                onClick={onRefreshPlans}
+                className="text-[11px] px-3 py-1.5 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {plansLoading && <p className="text-sm text-slate-500 mb-3">Loading plan library...</p>}
+
+            <div className="space-y-4">
+              {plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className="p-4 rounded-2xl border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300"
+                  onClick={() => onStart(plan)}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <span className="px-2 py-0.5 text-[9px] font-bold rounded-sm uppercase tracking-wider bg-[#e4f6ef] text-[#476e62]">
+                        {plan.badge}
+                      </span>
+                      <h3 className="font-semibold mt-1 text-slate-800">{plan.name}</h3>
+                    </div>
+                    <span className="font-semibold text-sm text-[#476e62]">{plan.time_estimate}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed mt-1">{plan.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </AppContainer>
+    );
+
     // ─── Screen 4: Tracking ───────────────────────────────────────────────────────
     const ScreenTracking = ({ onBack, sessionData, analysis, refImage, onRepeat, onZoom, onRefWiring, onNext, onTogglePause, onAnalyzeNow }) => {
       const videoRef = useRef(null);
