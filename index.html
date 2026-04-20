@@ -179,7 +179,7 @@
     ];
 
     // API_BASE points to the FastAPI backend, which holds the Anthropic key securely
-    const API_BASE = window.API_BASE || 'https://10.2.127.252:8000/api';
+    const API_BASE = `${window.location.origin}/api`;
     const DEFAULT_INVENTORY = ['breadboard', 'arduino nano', 'led', '220Ω resistor', 'jumper wire', 'usb cable'];
 
     const DRAFTS_STORAGE_KEY = 'ar_builder_coach_drafts';
