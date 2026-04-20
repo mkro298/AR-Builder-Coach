@@ -182,6 +182,48 @@
     const API_BASE = window.API_BASE || 'https://10.2.127.252:8000/api';
     const DEFAULT_INVENTORY = ['breadboard', 'arduino nano', 'led', '220Ω resistor', 'jumper wire', 'usb cable'];
 
+    const DRAFTS_STORAGE_KEY = 'ar_builder_coach_drafts';
+    const YOUTUBE_TUTORIAL_URL = 'https://www.youtube.com/results?search_query=basic+electronics+for+beginners+breadboard+arduino';
+
+    function safeReadDrafts() {
+      try {
+        const raw = localStorage.getItem(DRAFTS_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (err) {
+        return [];
+      }
+    }
+
+    function safeWriteDrafts(drafts) {
+      localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    }
+
+    function makeDraftFromPlan(plan, materials) {
+      return {
+        id: `draft-${plan.id}-${Date.now()}`,
+        plan_id: plan.id,
+        plan_name: plan.name,
+        time_estimate: plan.time_estimate,
+        badge: plan.badge,
+        detected_materials: materials || [],
+        saved_at: new Date().toISOString(),
+      };
+    }
+
+    function upsertDraft(existingDrafts, newDraft) {
+      const filtered = existingDrafts.filter(d => d.plan_id !== newDraft.plan_id);
+      return [newDraft, ...filtered].slice(0, 10);
+    }
+
+    function formatSavedTime(iso) {
+      try {
+        return new Date(iso).toLocaleString();
+      } catch (err) {
+        return iso;
+      }
+    }
+
     // Material normalization map
     const MATERIAL_MAP = [
       { keywords: ["arduino", "nano"], label: "arduino nano" },
@@ -295,7 +337,7 @@
     };
 
     // ─── Screen 1: Home ──────────────────────────────────────────────────────────
-    const ScreenHome = ({ onScan }) => (
+    const ScreenHome = ({ onScan, onOpenDrafts, onOpenPlanLibrary, onOpenTutorial }) => (
       <AppContainer bg="#ffffff">
         <div className="px-6 pt-8 flex-1 flex flex-col">
           <h1 className="text-[28px] font-semibold text-slate-800 leading-tight">AR Builder Coach</h1>
@@ -316,18 +358,35 @@
           </div>
 
           <div className="mt-auto space-y-3">
-            <button onClick={onScan} className="w-full py-4 rounded-xl text-white font-medium flex items-center justify-center gap-2 pulse-btn" style={{ backgroundColor: theme.darkTeal }}>
+            <button
+              onClick={onScan}
+              className="w-full py-4 rounded-xl text-white font-medium flex items-center justify-center gap-2 pulse-btn"
+              style={{ backgroundColor: theme.darkTeal }}
+            >
               <IconCamera size={18} color="white" />
               Scan Materials
             </button>
-            <button className="w-full py-4 rounded-xl font-medium" style={{ backgroundColor: theme.lightTeal, color: theme.darkTeal }}>
+
+            <button
+              onClick={onOpenDrafts}
+              className="w-full py-4 rounded-xl font-medium"
+              style={{ backgroundColor: theme.lightTeal, color: theme.darkTeal }}
+            >
               Build from Drafts
             </button>
+
             <div className="flex gap-3 pt-2">
-              <button className="flex-1 py-3 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-slate-700">
+              <button
+                onClick={onOpenPlanLibrary}
+                className="flex-1 py-3 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-slate-700"
+              >
                 <IconSearch size={16} /> Plan
               </button>
-              <button className="flex-1 py-3 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-slate-700">
+
+              <button
+                onClick={onOpenTutorial}
+                className="flex-1 py-3 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-sm font-medium text-slate-700"
+              >
                 <IconPlay size={16} /> Tutorial
               </button>
             </div>
@@ -654,6 +713,8 @@ Return ONLY the JSON array, nothing else.`
         </AppContainer>
       );
     };
+
+    
 
     // ─── Screen 3: Feasible Plans ─────────────────────────────────────────────────
     const ScreenPlans = ({ onBack, onStart, detectedParts, plans, plansLoading, onRefreshPlans }) => (
