@@ -1128,6 +1128,37 @@ Return ONLY the JSON array, nothing else.`
         }
       }, [api, detectedParts]);
 
+      const persistDrafts = useCallback((nextDrafts) => {
+        setDrafts(nextDrafts);
+        safeWriteDrafts(nextDrafts);
+      }, []);
+
+      const deleteDraft = useCallback((draftId) => {
+        const nextDrafts = drafts.filter(d => d.id !== draftId);
+        persistDrafts(nextDrafts);
+        setToast('Draft deleted');
+      }, [drafts, persistDrafts]);
+
+      const openTutorial = useCallback(() => {
+        window.open(YOUTUBE_TUTORIAL_URL, '_blank', 'noopener,noreferrer');
+      }, []);
+
+      const openDraftPlan = useCallback(async (draft) => {
+        setDetectedParts(draft.detected_materials || []);
+        const draftPlan = {
+          id: draft.plan_id,
+          name: draft.plan_name,
+          badge: draft.badge || 'Draft',
+          time_estimate: draft.time_estimate || '',
+        };
+        await startPlan(draftPlan, draft.detected_materials || [], false);
+      }, [startPlan]);
+
+      const openPlanLibrary = useCallback(async () => {
+        setScreen(6);
+        await fetchPlans(DEFAULT_INVENTORY);
+      }, [fetchPlans]);
+
       const nextStep = useCallback(async () => {
         if (!sessionData?.session_id) return;
         try {
