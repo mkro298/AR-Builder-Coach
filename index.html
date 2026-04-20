@@ -1071,6 +1071,7 @@ Return ONLY the JSON array, nothing else.`
       const [refImage, setRefImage] = useState(null);
       const [error, setError] = useState('');
       const [toast, setToast] = useState('');
+      const [drafts, setDrafts] = useState(() => safeReadDrafts());
 
       const api = useCallback(async (path, options = {}) => {
         const res = await fetch(`${API_BASE}${path}`, {
