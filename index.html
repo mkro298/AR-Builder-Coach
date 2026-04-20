@@ -1104,29 +1104,42 @@ Return ONLY the JSON array, nothing else.`
         }
       }, [api, detectedParts]);
 
-      const startPlan = useCallback(async (plan) => {
+      const startPlan = useCallback(async (plan, customParts = null, shouldSaveDraft = true) => {
         setError('');
         setRefImage(null);
+
         try {
-          const rawParts = (detectedParts && detectedParts.length > 0) ? detectedParts : DEFAULT_INVENTORY;
+          const rawParts = (customParts && customParts.length > 0)
+            ? customParts
+            : ((detectedParts && detectedParts.length > 0) ? detectedParts : DEFAULT_INVENTORY);
+
           const normalizedParts = classifyMaterials(rawParts);
+
           const session = await api('/session/start', {
             method: 'POST',
             body: JSON.stringify({
               plan_id: plan.id,
               plan_name: plan.name,
               inventory: normalizedParts,
-              preferences: { ar_mode: 'medium_prototype', source: 'screen3' }
+              preferences: { ar_mode: 'medium_prototype', source: 'home_or_library_or_draft' }
             })
           });
+
           setSelectedPlan(plan);
           setSessionData(session);
           setAnalysis(session.last_analysis || null);
+          setDetectedParts(normalizedParts);
           setScreen(4);
+
+          if (shouldSaveDraft) {
+            const newDraft = makeDraftFromPlan(plan, normalizedParts);
+            const nextDrafts = upsertDraft(drafts, newDraft);
+            persistDrafts(nextDrafts);
+          }
         } catch (err) {
           setError(err.message);
         }
-      }, [api, detectedParts]);
+      }, [api, detectedParts, drafts, persistDrafts]);
 
       const persistDrafts = useCallback((nextDrafts) => {
         setDrafts(nextDrafts);
