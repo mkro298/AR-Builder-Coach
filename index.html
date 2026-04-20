@@ -1255,13 +1255,25 @@ Return ONLY the JSON array, nothing else.`
 
       return (
         <>
-          {screen === 1 && <ScreenHome onScan={() => setScreen(2)} />}
+          {screen === 1 && (
+            <ScreenHome
+              onScan={() => setScreen(2)}
+              onOpenDrafts={() => setScreen(5)}
+              onOpenPlanLibrary={openPlanLibrary}
+              onOpenTutorial={openTutorial}
+            />
+          )}
+
           {screen === 2 && (
             <ScreenScanning
               onBack={() => setScreen(1)}
-              onConfirm={(parts) => { setDetectedParts(parts); setScreen(3); }}
+              onConfirm={(parts) => {
+                setDetectedParts(parts);
+                setScreen(3);
+              }}
             />
           )}
+
           {screen === 3 && (
             <ScreenPlans
               onBack={() => setScreen(2)}
@@ -1272,6 +1284,7 @@ Return ONLY the JSON array, nothing else.`
               onRefreshPlans={() => fetchPlans()}
             />
           )}
+
           {screen === 4 && (
             <ScreenTracking
               onBack={() => setScreen(3)}
@@ -1284,6 +1297,25 @@ Return ONLY the JSON array, nothing else.`
               onNext={nextStep}
               onTogglePause={togglePause}
               onAnalyzeNow={analyzeCurrentFrame}
+            />
+          )}
+
+          {screen === 5 && (
+            <ScreenDrafts
+              onBack={() => setScreen(1)}
+              drafts={drafts}
+              onOpenDraft={openDraftPlan}
+              onDeleteDraft={deleteDraft}
+            />
+          )}
+
+          {screen === 6 && (
+            <ScreenPlanLibrary
+              onBack={() => setScreen(1)}
+              onStart={startPlan}
+              plans={plans}
+              plansLoading={plansLoading}
+              onRefreshPlans={() => fetchPlans(DEFAULT_INVENTORY)}
             />
           )}
 
