@@ -568,11 +568,18 @@ class PrototypeVisionService:
             "detected_boxes": [],
             "hand_points": [{"x": x, "y": y} for x, y in hands],
         }
-        for label, items in detections.items():
-            for item in items:
-                bbox = item.get("bbox")
-                if bbox:
-                    overlays["detected_boxes"].append({"label": label, "bbox": bbox, "score": item.get("score", 0.0)})
+        for label in step.expected_objects:
+            items = detections.get(label, [])
+            if not items:
+                continue
+            best = items[0]
+            bbox = best.get("bbox")
+            if bbox:
+                overlays["detected_boxes"].append({
+                    "label": label,
+                    "bbox": bbox,
+                    "score": best.get("score", 0.0)
+                })
         return overlays
 
     def _make_arrow_for_target(self, target: Dict[str, float]) -> Dict[str, Any]:
