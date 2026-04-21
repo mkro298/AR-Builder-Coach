@@ -482,7 +482,7 @@ class PrototypeVisionService:
         detections: Dict[str, List[Dict[str, Any]]],
         hands: List[Tuple[float, float]],
     ) -> Tuple[bool, float, str]:
-        target = step.target_region
+        target = self._resolve_target_region(step, detections)
 
         def best_iou(label: str) -> float:
             candidates = detections.get(label, [])
@@ -519,13 +519,47 @@ class PrototypeVisionService:
         feedback = "Current scene generally matches the step." if matched else "Current scene still differs from the target step."
         return matched, score, feedback
 
+    def _resolve_target_region(self, step: StepDefinition, detections: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+        breadboards = detections.get("breadboard", [])
+        if not breadboards:
+            return step.target_region
+
+        bb = breadboards[0]["bbox"]
+
+        # relative coordinates inside detected breadboard
+        if step.completion_check == "led_region":
+            return {
+                "x": bb["x"],
+                "y": bb["y"] - bb["h"] * 0.12,
+                "w": bb["w"] * 0.34,
+                "h": bb["h"] * 0.18,
+            }
+
+        if step.completion_check == "resistor_region":
+            return {
+                "x": bb["x"] - bb["w"] * 0.10,
+                "y": bb["y"] + bb["h"] * 0.10,
+                "w": bb["w"] * 0.42,
+                "h": bb["h"] * 0.16,
+            }
+
+        if step.completion_check == "nano_region":
+            return {
+                "x": bb["x"] + bb["w"] * 0.62,
+                "y": bb["y"],
+                "w": bb["w"] * 0.26,
+                "h": bb["h"] * 0.45,
+            }
+
+        return step.target_region
+
     def _build_overlay(
         self,
         step: StepDefinition,
         detections: Dict[str, List[Dict[str, Any]]],
         hands: List[Tuple[float, float]],
     ) -> Dict[str, Any]:
-        target = step.target_region
+        target = self._resolve_target_region(step, detections)
         overlays = {
             "highlight_box": target,
             "label": step.title,
