@@ -431,7 +431,7 @@ class PrototypeVisionService:
             "led": self._detect_red_led(hsv, w, h),
             "resistor": self._detect_resistor(hsv, w, h),
             "arduino nano": self._detect_blue_board(hsv, w, h),
-            "breadboard": [{"bbox": {"x": 0.5, "y": 0.5, "w": 0.6, "h": 0.45}, "score": 0.55}],
+            "breadboard": self._detect_breadboard(image_bgr, hsv, w, h),
             "jumper wire": [],
         }
         return detections
@@ -568,6 +568,44 @@ class PrototypeVisionService:
         upper = np.array([130, 255, 255])
         mask = cv2.inRange(hsv, lower, upper)
         return self._mask_to_boxes(mask, w, h, min_area=600, label_bias=(0.0, 0.0))
+
+    def _detect_breadboard(self, image_bgr: np.ndarray, hsv: np.ndarray, w: int, h: int) -> List[Dict[str, Any]]:
+        # Breadboard is usually light/white with low saturation and reasonably high value
+        lower = np.array([0, 0, 120])
+        upper = np.array([180, 70, 255])
+        mask = cv2.inRange(hsv, lower, upper)
+
+        kernel = np.ones((7, 7), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        boxes = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < 8000:
+                continue
+
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            aspect = bw / max(bh, 1)
+
+            # Breadboard is roughly rectangular and wider than tall
+            if aspect < 0.8 or aspect > 2.5:
+                continue
+
+            boxes.append({
+                "bbox": {
+                    "x": clamp01((x + bw / 2) / w),
+                    "y": clamp01((y + bh / 2) / h),
+                    "w": clamp01(bw / w),
+                    "h": clamp01(bh / h),
+                },
+                "score": round(min(0.95, 0.55 + area / (w * h)), 3),
+            })
+
+        boxes.sort(key=lambda item: item["score"], reverse=True)
+        return boxes[:1]
 
     def _mask_to_boxes(self, mask: np.ndarray, w: int, h: int, min_area: int, label_bias: Tuple[float, float]) -> List[Dict[str, Any]]:
         kernel = np.ones((5, 5), np.uint8)
