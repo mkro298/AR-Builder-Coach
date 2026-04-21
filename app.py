@@ -137,6 +137,7 @@ class SessionState:
     zoom: float = 1.0
     reference_cache: Dict[str, str] = field(default_factory=dict)
     last_analysis: Dict[str, Any] = field(default_factory=dict)
+    vision_stability: Dict[str, Any] = field(default_factory=dict)
 
 
 # =========================
@@ -407,6 +408,16 @@ def box_iou(a: Dict[str, float], b: Dict[str, float]) -> float:
     return 0.0 if union <= 0 else inter / union
 
 
+def ema_bbox(prev: Dict[str, float], nxt: Dict[str, float], alpha: float) -> Dict[str, float]:
+    a = clamp01(alpha)
+    return {
+        "x": clamp01(a * nxt["x"] + (1.0 - a) * prev["x"]),
+        "y": clamp01(a * nxt["y"] + (1.0 - a) * prev["y"]),
+        "w": clamp01(a * nxt["w"] + (1.0 - a) * prev["w"]),
+        "h": clamp01(a * nxt["h"] + (1.0 - a) * prev["h"]),
+    }
+
+
 class PrototypeVisionService:
     """
     Prototype CV service:
@@ -414,6 +425,11 @@ class PrototypeVisionService:
     - MediaPipe hands to infer active manipulation
     - YOLO placeholder is represented as a hook in self.detect_objects()
     """
+
+    STABILITY_IOU_MATCH = 0.22
+    STABILITY_REQUIRED_STREAK = 2
+    STABILITY_DROP_AFTER_MISSES = 2
+    STABILITY_EMA_ALPHA = 0.45
 
     def __init__(self) -> None:
         self._hands = mp_hands.Hands(
@@ -427,11 +443,21 @@ class PrototypeVisionService:
         h, w = image_bgr.shape[:2]
         hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
 
+        breadboard_boxes = self._detect_breadboard(image_bgr, hsv, w, h)
+        led_boxes = self._detect_red_led(hsv, w, h)
+        resistor_boxes = self._detect_resistor(hsv, w, h)
+
+        if breadboard_boxes:
+            # Restrict tiny components to the breadboard area to avoid
+            # false positives from white background and room objects.
+            led_boxes = self._filter_inside_breadboard(led_boxes, breadboard_boxes[0]["bbox"])
+            resistor_boxes = self._filter_inside_breadboard(resistor_boxes, breadboard_boxes[0]["bbox"])
+
         detections: Dict[str, List[Dict[str, Any]]] = {
-            "led": self._detect_red_led(hsv, w, h),
-            "resistor": self._detect_resistor(hsv, w, h),
+            "led": led_boxes,
+            "resistor": resistor_boxes,
             "arduino nano": self._detect_blue_board(hsv, w, h),
-            "breadboard": self._detect_breadboard(image_bgr, hsv, w, h),
+            "breadboard": breadboard_boxes,
             "jumper wire": [],
         }
         return detections
@@ -452,7 +478,7 @@ class PrototypeVisionService:
         detections = self.detect_objects(image_bgr)
         hands = self.detect_hands(image_bgr)
 
-        overlay = self._build_overlay(step, detections, hands)
+        overlay = self._build_overlay(session, step, detections, hands)
         matched, confidence, feedback = self._evaluate_step(step, detections, hands)
         scene_score = self._scene_match_score(step, detections)
 
@@ -553,8 +579,85 @@ class PrototypeVisionService:
 
         return step.target_region
 
+    def _raw_candidate_boxes(self, step: StepDefinition, detections: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for label in step.expected_objects:
+            items = detections.get(label, [])
+            if not items:
+                continue
+            best = items[0]
+            bbox = best.get("bbox")
+            if bbox and best.get("score", 0.0) >= 0.55:
+                out.append({
+                    "label": label,
+                    "bbox": dict(bbox),
+                    "score": float(best.get("score", 0.0)),
+                })
+        return out
+
+    def _stabilize_boxes(
+        self,
+        session: SessionState,
+        step_id: str,
+        expected_labels: List[str],
+        raw_boxes: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        root = session.vision_stability
+        if root.get("step_id") != step_id:
+            root.clear()
+            root["step_id"] = step_id
+            root["labels"] = {}
+        by_label_state: Dict[str, Any] = root["labels"]
+
+        raw_by_label = {item["label"]: item for item in raw_boxes}
+        out: List[Dict[str, Any]] = []
+
+        for label in expected_labels:
+            state = by_label_state.setdefault(
+                label,
+                {"streak": 0, "misses": 0, "last_raw": None, "ema": None, "last_score": 0.0},
+            )
+            raw_item = raw_by_label.get(label)
+
+            if raw_item is None:
+                state["misses"] = int(state["misses"]) + 1
+                state["streak"] = 0
+                state["last_raw"] = None
+                if state["misses"] >= self.STABILITY_DROP_AFTER_MISSES:
+                    state["ema"] = None
+                continue
+
+            state["misses"] = 0
+            bbox = raw_item["bbox"]
+            state["last_score"] = float(raw_item.get("score", 0.0))
+
+            prev_raw = state["last_raw"]
+            if prev_raw is None:
+                state["streak"] = 1
+            elif box_iou(prev_raw, bbox) >= self.STABILITY_IOU_MATCH:
+                state["streak"] = int(state["streak"]) + 1
+            else:
+                state["streak"] = 1
+                state["ema"] = None
+
+            state["last_raw"] = dict(bbox)
+
+            if int(state["streak"]) >= self.STABILITY_REQUIRED_STREAK:
+                if state["ema"] is None:
+                    state["ema"] = dict(bbox)
+                else:
+                    state["ema"] = ema_bbox(state["ema"], bbox, self.STABILITY_EMA_ALPHA)
+                out.append({
+                    "label": label,
+                    "bbox": dict(state["ema"]),
+                    "score": round(state["last_score"], 3),
+                })
+
+        return out
+
     def _build_overlay(
         self,
+        session: SessionState,
         step: StepDefinition,
         detections: Dict[str, List[Dict[str, Any]]],
         hands: List[Tuple[float, float]],
@@ -568,18 +671,10 @@ class PrototypeVisionService:
             "detected_boxes": [],
             "hand_points": [{"x": x, "y": y} for x, y in hands],
         }
-        for label in step.expected_objects:
-            items = detections.get(label, [])
-            if not items:
-                continue
-            best = items[0]
-            bbox = best.get("bbox")
-            if bbox:
-                overlays["detected_boxes"].append({
-                    "label": label,
-                    "bbox": bbox,
-                    "score": best.get("score", 0.0)
-                })
+        raw = self._raw_candidate_boxes(step, detections)
+        overlays["detected_boxes"] = self._stabilize_boxes(
+            session, step.id, step.expected_objects, raw
+        )
         return overlays
 
     def _make_arrow_for_target(self, target: Dict[str, float]) -> Dict[str, Any]:
@@ -591,24 +686,54 @@ class PrototypeVisionService:
         }
 
     def _detect_red_led(self, hsv: np.ndarray, w: int, h: int) -> List[Dict[str, Any]]:
-        lower1 = np.array([0, 70, 50])
+        lower1 = np.array([0, 95, 70])
         upper1 = np.array([10, 255, 255])
-        lower2 = np.array([170, 70, 50])
+        lower2 = np.array([170, 95, 70])
         upper2 = np.array([180, 255, 255])
         mask = cv2.inRange(hsv, lower1, upper1) | cv2.inRange(hsv, lower2, upper2)
-        return self._mask_to_boxes(mask, w, h, min_area=120, label_bias=(0.0, 0.0))
+        return self._mask_to_boxes(
+            mask,
+            w,
+            h,
+            min_area=120,
+            label_bias=(0.0, 0.0),
+            min_score=0.56,
+            max_area_ratio=0.02,
+            min_aspect=0.45,
+            max_aspect=2.2,
+        )
 
     def _detect_resistor(self, hsv: np.ndarray, w: int, h: int) -> List[Dict[str, Any]]:
-        lower = np.array([8, 40, 70])
-        upper = np.array([25, 190, 220])
+        lower = np.array([10, 55, 55])
+        upper = np.array([28, 180, 225])
         mask = cv2.inRange(hsv, lower, upper)
-        return self._mask_to_boxes(mask, w, h, min_area=200, label_bias=(0.0, 0.0))
+        return self._mask_to_boxes(
+            mask,
+            w,
+            h,
+            min_area=180,
+            label_bias=(0.0, 0.0),
+            min_score=0.55,
+            max_area_ratio=0.03,
+            min_aspect=1.25,
+            max_aspect=8.0,
+        )
 
     def _detect_blue_board(self, hsv: np.ndarray, w: int, h: int) -> List[Dict[str, Any]]:
         lower = np.array([90, 60, 50])
         upper = np.array([130, 255, 255])
         mask = cv2.inRange(hsv, lower, upper)
-        return self._mask_to_boxes(mask, w, h, min_area=600, label_bias=(0.0, 0.0))
+        return self._mask_to_boxes(
+            mask,
+            w,
+            h,
+            min_area=600,
+            label_bias=(0.0, 0.0),
+            min_score=0.52,
+            max_area_ratio=0.5,
+            min_aspect=0.25,
+            max_aspect=5.0,
+        )
 
     def _detect_breadboard(self, image_bgr: np.ndarray, hsv: np.ndarray, w: int, h: int) -> List[Dict[str, Any]]:
         # Breadboard is usually light/white with low saturation and reasonably high value
@@ -648,17 +773,38 @@ class PrototypeVisionService:
         boxes.sort(key=lambda item: item["score"], reverse=True)
         return boxes[:1]
 
-    def _mask_to_boxes(self, mask: np.ndarray, w: int, h: int, min_area: int, label_bias: Tuple[float, float]) -> List[Dict[str, Any]]:
+    def _mask_to_boxes(
+        self,
+        mask: np.ndarray,
+        w: int,
+        h: int,
+        min_area: int,
+        label_bias: Tuple[float, float],
+        min_score: float = 0.0,
+        max_area_ratio: float = 1.0,
+        min_aspect: float = 0.0,
+        max_aspect: float = 100.0,
+    ) -> List[Dict[str, Any]]:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         boxes: List[Dict[str, Any]] = []
+        frame_area = max(float(w * h), 1.0)
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < min_area:
                 continue
             x, y, bw, bh = cv2.boundingRect(cnt)
+            aspect = bw / max(float(bh), 1.0)
+            area_ratio = area / frame_area
+            if area_ratio > max_area_ratio:
+                continue
+            if aspect < min_aspect or aspect > max_aspect:
+                continue
+            score = round(min(0.95, 0.45 + area_ratio), 3)
+            if score < min_score:
+                continue
             boxes.append(
                 {
                     "bbox": {
@@ -667,11 +813,46 @@ class PrototypeVisionService:
                         "w": clamp01(bw / w),
                         "h": clamp01(bh / h),
                     },
-                    "score": round(min(0.95, 0.45 + area / (w * h)), 3),
+                    "score": score,
                 }
             )
         boxes.sort(key=lambda item: item["score"], reverse=True)
         return boxes[:5]
+
+    def _filter_inside_breadboard(
+        self, items: List[Dict[str, Any]], breadboard_bbox: Dict[str, float]
+    ) -> List[Dict[str, Any]]:
+        bb_left = breadboard_bbox["x"] - breadboard_bbox["w"] / 2
+        bb_top = breadboard_bbox["y"] - breadboard_bbox["h"] / 2
+        bb_right = breadboard_bbox["x"] + breadboard_bbox["w"] / 2
+        bb_bottom = breadboard_bbox["y"] + breadboard_bbox["h"] / 2
+
+        kept: List[Dict[str, Any]] = []
+        for item in items:
+            bbox = item.get("bbox")
+            if not bbox:
+                continue
+            cx, cy = bbox["x"], bbox["y"]
+            inside = bb_left <= cx <= bb_right and bb_top <= cy <= bb_bottom
+            if not inside:
+                continue
+            # Light edge margin penalty: components near border are often noise.
+            edge_margin_x = breadboard_bbox["w"] * 0.04
+            edge_margin_y = breadboard_bbox["h"] * 0.04
+            near_edge = (
+                cx < bb_left + edge_margin_x
+                or cx > bb_right - edge_margin_x
+                or cy < bb_top + edge_margin_y
+                or cy > bb_bottom - edge_margin_y
+            )
+            if near_edge:
+                score = max(0.0, float(item.get("score", 0.0)) - 0.06)
+                if score < 0.55:
+                    continue
+                item = {**item, "score": round(score, 3)}
+            kept.append(item)
+        kept.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+        return kept[:3]
 
 
 vision_service = PrototypeVisionService()
