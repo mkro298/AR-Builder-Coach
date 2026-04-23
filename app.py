@@ -33,6 +33,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 DEFAULT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini")
+DEFAULT_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini")
 DEFAULT_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
 
 
@@ -138,6 +139,7 @@ class SessionState:
     reference_cache: Dict[str, str] = field(default_factory=dict)
     last_analysis: Dict[str, Any] = field(default_factory=dict)
     vision_stability: Dict[str, Any] = field(default_factory=dict)
+    gpt_eval_state: Dict[str, Any] = field(default_factory=dict)
 
 
 # =========================
@@ -357,6 +359,100 @@ class PlannerService:
 
 
 planner_service = PlannerService()
+
+def _extract_first_json_object(text: str) -> Dict[str, Any]:
+    text = (text or "").strip()
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except Exception:
+            return {}
+    return {}
+
+
+def gpt_snapshot_judge(step: StepDefinition, image_data_url: str) -> Dict[str, Any]:
+    """
+    Return shape:
+    {
+      "is_complete": bool,
+      "confidence": float [0..1],
+      "reason": str
+    }
+    """
+    client = maybe_get_openai_client()
+    if client is None:
+        return {
+            "is_complete": False,
+            "confidence": 0.0,
+            "reason": "Live tracking unavailable. You can press Next to continue manually.",
+        }
+
+    prompt = f"""
+You are a strict electronics build checker for beginners.
+Current step:
+- id: {step.id}
+- title: {step.title}
+- goal: {step.goal}
+- hint: {step.overlay_hint}
+
+Task:
+Decide whether THIS STEP is completed in the provided camera frame.
+
+Rules:
+- Be conservative. If uncertain, return incomplete.
+- Judge only current step completion, not the whole project.
+- Ignore UI overlays/text; focus on physical components in camera image.
+
+Return ONLY valid JSON object:
+{{
+  "is_complete": true/false,
+  "confidence": 0.0-1.0,
+  "reason": "short reason under 20 words"
+}}
+"""
+
+    try:
+        response = client.responses.create(
+            model=DEFAULT_VISION_MODEL,
+            temperature=0.0,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                        {"type": "input_image", "image_url": image_data_url},
+                    ],
+                }
+            ],
+        )
+        text = getattr(response, "output_text", "") or ""
+        data = _extract_first_json_object(text)
+
+        is_complete = bool(data.get("is_complete", False))
+        confidence = float(data.get("confidence", 0.0))
+        confidence = max(0.0, min(1.0, confidence))
+        reason = str(data.get("reason", "")).strip() or "No reason provided."
+
+        return {
+            "is_complete": is_complete,
+            "confidence": confidence,
+            "reason": reason,
+        }
+    except Exception as exc:
+        return {
+            "is_complete": False,
+            "confidence": 0.0,
+            "reason": f"Vision check failed: {exc}",
+        }
 
 
 # =========================
@@ -1032,6 +1128,7 @@ def next_step(session_id: str) -> Dict[str, Any]:
     if session.current_step_index < len(session.steps) - 1:
         session.current_step_index += 1
         session.last_analysis = {}
+        session.gpt_eval_state = {}
     return get_step_payload(session)
 
 
@@ -1069,12 +1166,88 @@ def analyze_frame(req: FrameAnalyzeRequest) -> Dict[str, Any]:
     session = SESSIONS.get(req.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
-    image = decode_image(req.image_base64)
-    result = vision_service.analyze_step(session, image, req.image_width, req.image_height)
-    if result["matched"] and session.current_step_index < len(session.steps) - 1:
+
+    step = session.steps[session.current_step_index]
+
+    # Per-step GPT state
+    state = session.gpt_eval_state
+    if state.get("step_id") != step.id:
+        state.clear()
+        state["step_id"] = step.id
+        state["checks"] = 0
+        state["consecutive_passes"] = 0
+        state["validated"] = False
+
+    # If already validated for this step, don't call GPT repeatedly.
+    if state.get("validated"):
+        result = {
+            "step_id": step.id,
+            "matched": True,
+            "confidence": 0.99,
+            "feedback": "Step already validated. Tap Next when ready.",
+            "hands_detected": 0,
+            "scene_match_score": 0.99,
+            "detections": {},
+            "overlay": {
+                "highlight_box": step.target_region,
+                "label": step.title,
+                "hint": "Step completed (GPT validated).",
+                "arrows": [],
+                "detected_boxes": [],
+                "hand_points": [],
+            },
+            "source": "gpt_snapshot",
+        }
+        result["ready_for_next"] = True
+        session.last_analysis = result
+        return result
+
+    # One screenshot -> one GPT judgement
+    judge = gpt_snapshot_judge(step, req.image_base64)
+    state["checks"] = int(state.get("checks", 0)) + 1
+
+    single_pass = judge["is_complete"] and judge["confidence"] >= 0.75
+    if single_pass:
+        state["consecutive_passes"] = int(state.get("consecutive_passes", 0)) + 1
+    else:
+        state["consecutive_passes"] = 0
+
+    # Debounce: require 2 consecutive passes
+    if state["consecutive_passes"] >= 2:
+        state["validated"] = True
+
+    matched = bool(state.get("validated", False))
+    confidence = judge["confidence"]
+
+    result = {
+        "step_id": step.id,
+        "matched": matched,
+        "confidence": round(confidence, 3),
+        "feedback": (
+            "Step looks correct. Tap Next to continue."
+            if matched
+            else f"{judge['reason']} (check #{state['checks']}, pass streak {state['consecutive_passes']}/2)"
+        ),
+        "hands_detected": 0,
+        "scene_match_score": round(confidence, 3),
+        "detections": {},
+        "overlay": {
+            "highlight_box": step.target_region,
+            "label": step.title,
+            "hint": step.overlay_hint,
+            "arrows": [],
+            "detected_boxes": [],
+            "hand_points": [],
+        },
+        "source": "gpt_snapshot",
+    }
+
+    if matched and session.current_step_index < len(session.steps) - 1:
         result["ready_for_next"] = True
     else:
-        result["ready_for_next"] = session.current_step_index == len(session.steps) - 1 and result["matched"]
+        result["ready_for_next"] = session.current_step_index == len(session.steps) - 1 and matched
+
+    session.last_analysis = result
     return result
 
 
