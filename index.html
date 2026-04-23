@@ -969,12 +969,31 @@ Return ONLY the JSON array, nothing else.`
       useEffect(() => {
         if (!cameraReady || !sessionData?.session_id) return;
         if (intervalRef.current) clearInterval(intervalRef.current);
-        intervalRef.current = setInterval(() => {
+
+        const tick = () => {
+          if (sessionData?.paused) return;
+          if (analysis?.matched) return; // stop snapshot checks once current step is validated
           const frame = captureFrame();
-          if (frame && !sessionData?.paused) onAnalyzeNow(frame);
-        }, 1800);
-        return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-      }, [cameraReady, sessionData?.session_id, sessionData?.paused, captureFrame, onAnalyzeNow]);
+          if (frame) onAnalyzeNow(frame);
+        };
+
+        // first check shortly after entering step
+        const first = setTimeout(tick, 1200);
+        // then check every 5 seconds
+        intervalRef.current = setInterval(tick, 5000);
+
+        return () => {
+          clearTimeout(first);
+          if (intervalRef.current) clearInterval(intervalRef.current);
+        };
+      }, [
+        cameraReady,
+        sessionData?.session_id,
+        sessionData?.paused,
+        analysis?.matched,
+        captureFrame,
+        onAnalyzeNow
+      ]);
 
       return (
         <AppContainer bg={theme.coachBg}>
