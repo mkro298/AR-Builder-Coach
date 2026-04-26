@@ -412,6 +412,14 @@ Rules:
 - Judge only current step completion, not the whole project.
 - Ignore UI overlays/text; focus on physical components in camera image.
 
+extra_rule = ""
+if step.id in {"step_led", "step_led_c"}:
+    extra_rule = (
+        "For this step, pass only if exactly one LED is visibly inserted on the breadboard, "
+        "with two legs in different rows across the center gap. "
+        "If LED is absent/unclear/not inserted, return is_complete=false."
+    )
+
 Return ONLY valid JSON object:
 {{
   "is_complete": true/false,
@@ -1023,7 +1031,7 @@ def build_plan_summaries(inventory: List[str]) -> List[PlanSummary]:
 def get_step_payload(session: SessionState) -> Dict[str, Any]:
     step = session.steps[session.current_step_index]
     progress_labels = [item.title for item in session.steps]
-    current_instruction = planner_service.beginner_instruction(step)
+    current_instruction = step.subtitle
     return {
         "session_id": session.id,
         "plan_id": session.plan_id,
@@ -1206,7 +1214,7 @@ def analyze_frame(req: FrameAnalyzeRequest) -> Dict[str, Any]:
     judge = gpt_snapshot_judge(step, req.image_base64)
     state["checks"] = int(state.get("checks", 0)) + 1
 
-    single_pass = judge["is_complete"] and judge["confidence"] >= 0.75
+    single_pass = judge["is_complete"] and judge["confidence"] >= 0.65
     if single_pass:
         state["consecutive_passes"] = int(state.get("consecutive_passes", 0)) + 1
     else:

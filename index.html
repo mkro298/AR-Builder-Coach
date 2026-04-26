@@ -309,11 +309,6 @@
           {overlay.highlight_box && (
             <div className="absolute border-2 border-dashed rounded-2xl shadow-[0_0_20px_rgba(74,222,128,0.45)]" style={boxStyle(overlay.highlight_box)} />
           )}
-          {(overlay.detected_boxes || []).map((item, idx) => (
-            <div key={idx} className="absolute border rounded-xl" style={boxStyle(item.bbox, '#f59e0b')}>
-              <div className="absolute -top-5 left-0 text-[9px] px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 font-semibold">{item.label}</div>
-            </div>
-          ))}
           {(overlay.hand_points || []).map((pt, idx) => (
             <div key={idx} className="absolute w-4 h-4 rounded-full bg-cyan-400/80 ring-4 ring-cyan-300/30" style={{ left: `calc(${pt.x * 100}% - 8px)`, top: `calc(${pt.y * 100}% - 8px)` }} />
           ))}
