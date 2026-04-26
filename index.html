@@ -689,7 +689,7 @@ Return ONLY the JSON array, nothing else.`
       );
     };
 
-    const ScreenDrafts = ({ onBack, drafts, onOpenDraft, onDeleteDraft }) => (
+    const ScreenDrafts = ({ onBack, drafts, plans, onOpenDraft, onDeleteDraft }) => (
       <AppContainer bg="#ffffff">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2">
@@ -1252,7 +1252,11 @@ Return ONLY the JSON array, nothing else.`
           {screen === 1 && (
             <ScreenHome
               onScan={() => setScreen(2)}
-              onOpenDrafts={() => setScreen(5)}
+              // attribute this part on onOpenDrafts to GPT
+              onOpenDrafts={async () => {
+                await fetchPlans(detectedParts);
+                setScreen(5);
+              }}
               onOpenPlanLibrary={openPlanLibrary}
               onOpenTutorial={openTutorial}
             />
@@ -1295,9 +1299,11 @@ Return ONLY the JSON array, nothing else.`
           )}
 
           {screen === 5 && (
+            // attribute this code on ScreenDrafts to GPT
             <ScreenDrafts
               onBack={() => setScreen(1)}
               drafts={drafts}
+              plans={plans}
               onOpenDraft={openDraftPlan}
               onDeleteDraft={deleteDraft}
             />
