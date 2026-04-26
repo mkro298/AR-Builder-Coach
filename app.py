@@ -155,7 +155,7 @@ def seed_plans() -> Dict[str, PlanDefinition]:
             badge="Recommended",
             time_estimate="10-12m",
             description="A beginner-friendly blinking LED circuit using one LED, one resistor, jumper wires, and an Arduino Nano.",
-            required_materials=["breadboard", "arduino nano", "led", "220Ω resistor", "jumper wire", "usb cable"],
+            required_materials=["breadboard", "led", "220Ω resistor", "jumper wire"],
             steps=[
                 StepDefinition(
                     id="step_led",
@@ -210,14 +210,15 @@ def seed_plans() -> Dict[str, PlanDefinition]:
                     ai_reference_prompt="A complete top-down beginner-friendly electronics reference showing an Arduino Nano, one LED, one resistor, and jumper wires arranged as a simple blinking LED circuit on a breadboard.",
                 ),
             ],
-        ),
+        ),  
+        # Attribute the following code on Plan B to GPT
         "plan_b": PlanDefinition(
 id="plan_b",
 name="Plan B (Balanced)",
 badge="Balanced",
 time_estimate="15-18m",
 description="A balanced build path with the same LED circuit, but broken into slightly more guided steps than Plan A.",
-required_materials=["breadboard", "arduino nano", "led", "220Ω resistor", "jumper wire", "usb cable"],
+required_materials=["breadboard", "arduino nano", "led", "220Ω resistor", "jumper wire"],
 steps=[
 StepDefinition(
 id="step_led_b",

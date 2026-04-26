@@ -3,7 +3,8 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>AR Builder Coach Prototype</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -240,11 +241,10 @@
       let normalized = (detectedParts || []).map(item => {
         const text = String(item?.label || item).toLowerCase();
 
-        // Core mappings
         if (text.includes("led")) return "led";
         if (text.includes("resistor")) return "220Ω resistor";
 
-        if (text.includes("wire") || text.includes("cable") || text.includes("lead")) {
+        if (text.includes("jumper") || text.includes("wire") || text.includes("lead")) {
           return "jumper wire";
         }
 
@@ -255,31 +255,11 @@
         if (text.includes("breadboard")) return "breadboard";
         if (text.includes("usb")) return "usb cable";
 
-        // ⚠️ Fallback remaps for misdetections (demo fix)
-        if (text.includes("piezo")) return "arduino nano";
-        if (text.includes("diode")) return "breadboard";
-
         return "unknown";
       }).filter(x => x !== "unknown");
 
-      // Remove duplicates
-      normalized = [...new Set(normalized)];
-
-      // Auto-fill missing essentials (so plans unlock)
-      const hasCore =
-        normalized.includes("led") ||
-        normalized.includes("220Ω resistor") ||
-        normalized.includes("jumper wire");
-
-      if (hasCore) {
-        if (!normalized.includes("breadboard")) normalized.push("breadboard");
-        if (!normalized.includes("arduino nano")) normalized.push("arduino nano");
-        if (!normalized.includes("usb cable")) normalized.push("usb cable");
-      }
-
-      return normalized;
+      return [...new Set(normalized)];
     }
-
 
 
 
@@ -939,7 +919,7 @@ Return ONLY the JSON array, nothing else.`
         const startCamera = async () => {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: 'environment' , width: { ideal: 1280 }, height: { ideal: 720 } },
+              video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
               audio: false,
             });
             if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -1107,7 +1087,7 @@ Return ONLY the JSON array, nothing else.`
         try {
           const rawParts = (parts && parts.length > 0) ? parts : DEFAULT_INVENTORY;
           const normalizedParts = classifyMaterials(rawParts);
-          const materialsForRequest = normalizedParts.length > 0 ? normalizedParts : DEFAULT_INVENTORY;
+          const materialsForRequest = normalizedParts;
 
           const data = await api('/plans', {
             method: 'POST',
