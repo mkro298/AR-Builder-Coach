@@ -1269,7 +1269,8 @@ def analyze_frame(req: FrameAnalyzeRequest) -> Dict[str, Any]:
             },
             "source": "gpt_snapshot",
         }
-        result["ready_for_next"] = True
+        # Never auto-advance. User must tap "Next" manually.
+        result["ready_for_next"] = False
         session.last_analysis = result
         return result
 
