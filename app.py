@@ -1313,10 +1313,7 @@ def analyze_frame(req: FrameAnalyzeRequest) -> Dict[str, Any]:
         "source": "gpt_snapshot",
     }
 
-    if matched and session.current_step_index < len(session.steps) - 1:
-        result["ready_for_next"] = True
-    else:
-        result["ready_for_next"] = session.current_step_index == len(session.steps) - 1 and matched
+    result["ready_for_next"] = False
 
     session.last_analysis = result
     return result

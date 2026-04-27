@@ -304,7 +304,7 @@
           })}
           {overlay.hint && (
             <div className="absolute left-4 top-4 max-w-[78%] bg-[#1e2229]/80 text-white text-[11px] px-3 py-2 rounded-xl backdrop-blur-sm shadow-lg">
-              {overlay.hint}
+              Place your circuit setup in the center of the screen so the camera can track your progress.
             </div>
           )}
         </div>
@@ -1233,6 +1233,7 @@ Return ONLY the JSON array, nothing else.`
               image_height: frame.image_height,
             })
           });
+          if (result?.step_id && result.step_id !== sessionData?.step?.id) return;
           setAnalysis(result);
         } catch (err) { setError(err.message); }
       }, [api, sessionData]);
