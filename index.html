@@ -786,7 +786,7 @@ Return ONLY the JSON array, nothing else.`
 
 
     // ─── Screen 3: Feasible Plans ─────────────────────────────────────────────────
-    const ScreenPlans = ({ onBack, onStart, detectedParts, plans, plansLoading, onRefreshPlans }) => (
+    const ScreenPlans = ({ onBack, onStart, detectedParts, plans, plansLoading, onRefreshPlans, isStartingPlan }) => (
       <AppContainer bg="#ffffff">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2">
@@ -818,8 +818,8 @@ Return ONLY the JSON array, nothing else.`
               {plans.map((plan) => (
                 <div
                   key={plan.id}
-                  className={`p-4 rounded-2xl transition-colors ${plan.available ? 'border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300' : 'bg-[#f8fafc] border border-slate-100 opacity-75'}`}
-                  onClick={() => plan.available && onStart(plan)}
+                  className={`p-4 rounded-2xl transition-colors ${plan.available ? 'border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300' : 'bg-[#f8fafc] border border-slate-100 opacity-75'} ${isStartingPlan ? 'pointer-events-none opacity-60' : ''}`}
+                  onClick={() => plan.available && !isStartingPlan && onStart(plan)}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
@@ -843,18 +843,22 @@ Return ONLY the JSON array, nothing else.`
           <div className="mt-auto px-6 mb-8">
             <button
               onClick={() => plans.find(p => p.available) && onStart(plans.find(p => p.available))}
-              className="w-full py-4 rounded-xl text-white font-medium shadow-md disabled:opacity-50"
+              className="w-full py-4 rounded-xl text-white font-medium shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: theme.darkTeal }}
-              disabled={!plans.some(p => p.available)}
+              disabled={!plans.some(p => p.available) || isStartingPlan}
             >
-              {plans.some(p => p.available) ? `Start ${plans.find(p => p.available).name}` : 'No available plan'}
+              {isStartingPlan
+                ? 'Starting plan...'
+                : plans.some(p => p.available)
+                  ? `Start ${plans.find(p => p.available).name}`
+                  : 'No available plan'}
             </button>
           </div>
         </div>
       </AppContainer>
     );
 
-    const ScreenPlanLibrary = ({ onBack, onStart, plans, plansLoading, onRefreshPlans }) => (
+    const ScreenPlanLibrary = ({ onBack, onStart, plans, plansLoading, onRefreshPlans, isStartingPlan }) => (
       <AppContainer bg="#ffffff">
         <div className="flex-1 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2">
@@ -880,13 +884,14 @@ Return ONLY the JSON array, nothing else.`
             </div>
 
             {plansLoading && <p className="text-sm text-slate-500 mb-3">Loading plan library...</p>}
+            {isStartingPlan && <p className="text-sm text-slate-500 mb-3">Starting selected plan...</p>}
 
             <div className="space-y-4">
               {plans.map((plan) => (
                 <div
                   key={plan.id}
-                  className="p-4 rounded-2xl border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300"
-                  onClick={() => onStart(plan)}
+                  className={`p-4 rounded-2xl border border-teal-100 bg-white shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] cursor-pointer hover:border-teal-300 ${isStartingPlan ? 'pointer-events-none opacity-60' : ''}`}
+                  onClick={() => !isStartingPlan && onStart(plan)}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
@@ -1090,6 +1095,8 @@ Return ONLY the JSON array, nothing else.`
       const [refImage, setRefImage] = useState(null);
       const [error, setError] = useState('');
       const [toast, setToast] = useState('');
+      const [isStartingPlan, setIsStartingPlan] = useState(false);
+      const startPlanInFlightRef = useRef(false);
       const [isNextLoading, setIsNextLoading] = useState(false);
       const nextInFlightRef = useRef(false);
       const [drafts, setDrafts] = useState(() => safeReadDrafts());
@@ -1130,8 +1137,13 @@ Return ONLY the JSON array, nothing else.`
       }, [api, detectedParts]);
 
       const startPlan = useCallback(async (plan, customParts = null, shouldSaveDraft = true) => {
+        if (startPlanInFlightRef.current) return;
+
+        startPlanInFlightRef.current = true;
+        setIsStartingPlan(true);
         setError('');
         setRefImage(null);
+        setToast(`Starting ${plan.name}...`);
 
         try {
           const rawParts = (customParts && customParts.length > 0)
@@ -1161,6 +1173,9 @@ Return ONLY the JSON array, nothing else.`
           }
         } catch (err) {
           setError(err.message);
+        } finally {
+          startPlanInFlightRef.current = false;
+          setIsStartingPlan(false);
         }
       }, [api, detectedParts, drafts, persistDrafts]);
 
@@ -1317,6 +1332,7 @@ Return ONLY the JSON array, nothing else.`
               plans={plans}
               plansLoading={plansLoading}
               onRefreshPlans={() => fetchPlans()}
+              isStartingPlan={isStartingPlan}
             />
           )}
 
@@ -1354,6 +1370,7 @@ Return ONLY the JSON array, nothing else.`
               plans={plans}
               plansLoading={plansLoading}
               onRefreshPlans={() => fetchPlans(DEFAULT_INVENTORY)}
+              isStartingPlan={isStartingPlan}
             />
           )}
 
