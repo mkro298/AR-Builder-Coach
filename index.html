@@ -181,7 +181,25 @@
 
     // API_BASE points to the FastAPI backend, which holds the Anthropic key securely
     const API_BASE = `${window.location.origin}/api`;
-    const DEFAULT_INVENTORY = ['breadboard', 'arduino nano', 'led', '220Ω resistor', 'jumper wire', 'usb cable'];
+    const DEFAULT_INVENTORY = [
+      'arduino nano',
+      'breadboard',
+      'led',
+      '220Ω resistor',
+      'jumper wire',
+      'push button',
+      'pir motion sensor',
+      'buzzer',
+      'dht11 sensor',
+      'oled display',
+      'dc motor',
+      'motor driver',
+      'battery pack',
+      'wheel',
+      'chassis',
+      'ultrasonic sensor',
+      'usb cable'
+    ];
 
     const DRAFTS_STORAGE_KEY = 'ar_builder_coach_drafts';
     const YOUTUBE_TUTORIAL_URL = 'https://www.youtube.com/results?search_query=basic+electronics+for+beginners+breadboard+arduino';
@@ -1118,16 +1136,14 @@ Return ONLY the JSON array, nothing else.`
         try {
           const rawParts = (customParts && customParts.length > 0)
             ? customParts
-            : detectedParts;
-
-         // const normalizedParts = classifyMaterials(rawParts);
+            : ((detectedParts && detectedParts.length > 0) ? detectedParts : DEFAULT_INVENTORY);
 
           const session = await api('/session/start', {
             method: 'POST',
             body: JSON.stringify({
               plan_id: plan.id,
               plan_name: plan.name,
-              inventory: detectedParts,
+              inventory: rawParts,
               preferences: { ar_mode: 'medium_prototype', source: 'home_or_library_or_draft' }
             })
           });
@@ -1135,11 +1151,11 @@ Return ONLY the JSON array, nothing else.`
           setSelectedPlan(plan);
           setSessionData(session);
           setAnalysis(session.last_analysis || null);
-          //setDetectedParts(normalizedParts);
+          setDetectedParts(rawParts);
           setScreen(4);
 
           if (shouldSaveDraft) {
-            const newDraft = makeDraftFromPlan(plan, detectedParts);
+            const newDraft = makeDraftFromPlan(plan, rawParts);
             const nextDrafts = upsertDraft(drafts, newDraft);
             persistDrafts(nextDrafts);
           }
