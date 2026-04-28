@@ -888,7 +888,7 @@ Return ONLY the JSON array, nothing else.`
     );
 
     // ─── Screen 4: Tracking ───────────────────────────────────────────────────────
-    const ScreenTracking = ({ onBack, sessionData, analysis, refImage, onRepeat, onZoom, onRefWiring, onNext, onTogglePause, onAnalyzeNow }) => {
+    const ScreenTracking = ({ onBack, sessionData, analysis, refImage, onRepeat, onZoom, onRefWiring, onNext, onTogglePause, onAnalyzeNow, isNextLoading }) => {
       const videoRef = useRef(null);
       const canvasRef = useRef(null);
       const streamRef = useRef(null);
@@ -1042,7 +1042,13 @@ Return ONLY the JSON array, nothing else.`
                 </button>
               </div>
               <div className="flex gap-3">
-                <button onClick={onNext} className="flex-1 py-4 bg-[#111418] text-white rounded-2xl font-medium text-sm shadow-lg">Next</button>
+                <button
+                  onClick={onNext}
+                  disabled={isNextLoading}
+                  className={`flex-1 py-4 rounded-2xl font-medium text-sm shadow-lg ${isNextLoading ? 'bg-slate-500 text-white cursor-not-allowed' : 'bg-[#111418] text-white'}`}
+                >
+                  {isNextLoading ? 'Loading...' : 'Next'}
+                </button>
                 <button onClick={onTogglePause} className="px-5 bg-white border border-slate-200 text-slate-800 rounded-2xl shadow-sm flex items-center justify-center">
                   <IconPause size={18} fill="currentColor" />
                 </button>
@@ -1065,6 +1071,8 @@ Return ONLY the JSON array, nothing else.`
       const [refImage, setRefImage] = useState(null);
       const [error, setError] = useState('');
       const [toast, setToast] = useState('');
+      const [isNextLoading, setIsNextLoading] = useState(false);
+      const nextInFlightRef = useRef(false);
       const [drafts, setDrafts] = useState(() => safeReadDrafts());
 
       const api = useCallback(async (path, options = {}) => {
@@ -1172,12 +1180,23 @@ Return ONLY the JSON array, nothing else.`
 
       const nextStep = useCallback(async () => {
         if (!sessionData?.session_id) return;
+        if (nextInFlightRef.current) return;
+
+        nextInFlightRef.current = true;
+        setIsNextLoading(true);
+        setToast('Moving to next step...');
+
         try {
           const data = await api(`/session/${sessionData.session_id}/step/next`, { method: 'POST', body: JSON.stringify({}) });
           setSessionData(data);
           setAnalysis(null);
           setRefImage(null);
-        } catch (err) { setError(err.message); }
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          nextInFlightRef.current = false;
+          setIsNextLoading(false);
+        }
       }, [api, sessionData]);
 
       const repeatStep = useCallback(async () => {
@@ -1296,6 +1315,7 @@ Return ONLY the JSON array, nothing else.`
               onNext={nextStep}
               onTogglePause={togglePause}
               onAnalyzeNow={analyzeCurrentFrame}
+              isNextLoading={isNextLoading}
             />
           )}
 

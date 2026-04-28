@@ -3,6 +3,7 @@ import io
 import json
 import math
 import os
+import time
 import uuid
 
 from dotenv import load_dotenv
@@ -140,6 +141,7 @@ class SessionState:
     last_analysis: Dict[str, Any] = field(default_factory=dict)
     vision_stability: Dict[str, Any] = field(default_factory=dict)
     gpt_eval_state: Dict[str, Any] = field(default_factory=dict)
+    last_next_ts: float = 0.0
 
 
 # =========================
@@ -1196,6 +1198,12 @@ def next_step(session_id: str) -> Dict[str, Any]:
     session = SESSIONS.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    now = time.time()
+    if now - session.last_next_ts < 0.8:
+        return get_step_payload(session)
+    session.last_next_ts = now
+
     if session.current_step_index < len(session.steps) - 1:
         session.current_step_index += 1
         session.last_analysis = {}
