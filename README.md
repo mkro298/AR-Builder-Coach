@@ -127,20 +127,20 @@ Notes:
 
 ---
 
-## Running the prototype
+## Running the prototype on mobile
 
-Use **two terminals**.
+The UI is now intended to be used from a phone browser while the backend runs on your laptop.
 
-### Terminal 1 — run the FastAPI backend
+### 1) Start the backend on your laptop
 
 ```bash
 source venv/bin/activate
-python app.py
+python3.11 app.py
 ```
 
-This starts the backend using the host and port defined in environment variables, with defaults `0.0.0.0` and `8000`.
+The backend serves both API and UI at port `8000`.
 
-To verify the backend is running, open:
+You can verify the server is running by opening:
 
 ```text
 http://localhost:8000/api/health
@@ -158,27 +158,53 @@ Expected JSON shape:
 
 If no OpenAI key is set, `openai_configured` will be `false`.
 
-### Terminal 2 — serve the frontend
+### 2) Open on mobile (choose one network path)
 
-Do not open `index.html` directly as a `file://` page. Use a local web server.
+#### A. When NOT on school Wi-Fi (same local network)
+
+1. Keep `python3.11 app.py` running on your laptop.
+2. Find your laptop IP address.
+3. On your phone browser, open:
+
+```text
+https://<YOUR_LAPTOP_IP>:8000
+```
+
+Example:
+
+```text
+https://10.103.82.250:8000
+```
+
+#### B. When ON school Wi-Fi (use ngrok tunnel)
+
+Use two terminals.
+
+Terminal 1:
 
 ```bash
-python3 -m http.server 5500
+source venv/bin/activate
+python3.11 app.py
 ```
 
-Then open:
+Terminal 2:
 
-```text
-http://localhost:5500/index.html
+1. Set up an ngrok account and copy your auth token.
+2. Configure token:
+
+```bash
+ngrok config add-authtoken <TOKEN>
 ```
 
-The frontend is configured to use:
+3. Start the tunnel:
 
-```text
-http://localhost:8000/api
+```bash
+ngrok http https://localhost:8000
 ```
 
-as its default backend base URL.
+4. Open the HTTPS forwarding URL shown by ngrok on your phone.
+
+Note: each new ngrok run may generate a different forwarding URL.
 
 ---
 
@@ -186,7 +212,9 @@ as its default backend base URL.
 
 ## 1. Home screen
 
-1. Open `http://localhost:5500/index.html`
+1. Open the phone-access URL:
+   - `https://<YOUR_LAPTOP_IP>:8000` (non-school Wi-Fi), or
+   - the HTTPS ngrok forwarding URL (school Wi-Fi)
 2. Confirm the AR Builder Coach home screen appears
 3. Click **Scan Materials**
 
