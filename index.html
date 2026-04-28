@@ -666,6 +666,7 @@ Return ONLY the JSON array, nothing else.`
                     setConfirmedParts(parsed);
                     setLabels([]);
                     setStatus(parsed.length > 0 ? 'detected' : 'scanning');
+                    onConfirm(parsed);
                   }}
                   className="w-full mt-2 py-3 rounded-xl font-medium bg-slate-200 text-slate-700"
                 >
