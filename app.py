@@ -1325,7 +1325,11 @@ def get_plans(req: InventoryRequest) -> Dict[str, Any]:
     - Return ONLY the JSON, no markdown, no explanation.
     """
 
-    import urllib.request as _urllib_request
+    client = OpenAI(
+        api_key=ANTHROPIC_API_KEY
+    )
+   
+    '''import urllib.request as _urllib_request
     payload = json.dumps({
         "model": "claude-opus-4-6",
         "max_tokens": 4000,
@@ -1336,17 +1340,21 @@ def get_plans(req: InventoryRequest) -> Dict[str, Any]:
         "Content-Type": "application/json",
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-    }
+    }'''
 
     try:
-        http_req = _urllib_request.Request(
+        '''http_req = _urllib_request.Request(
             "https://api.anthropic.com/v1/messages",
             data=payload, headers=headers, method="POST"
         )
         with _urllib_request.urlopen(http_req) as resp:
-            data = json.loads(resp.read())
-
-        text = data["content"][0]["text"].strip()
+            data = json.loads(resp.read())'''
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",          
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+        text = response.choices[0].message.content
         text = text.replace("```json", "").replace("```", "").strip()
         parsed = json.loads(text)
         print(f"[plans] claude raw response: {text}")
@@ -1600,8 +1608,7 @@ class AnthropicProxyRequest(BaseModel):
 def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
     if not ANTHROPIC_API_KEY:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured in .env")
-    import urllib.request as _urllib_request
-
+    '''import urllib.request as _urllib_request
     payload = json.dumps(req.model_dump()).encode()
     headers = {
         "Content-Type": "application/json",
@@ -1613,11 +1620,41 @@ def claude_messages(req: AnthropicProxyRequest) -> Dict[str, Any]:
         data=payload,
         headers=headers,
         method="POST",
-    )
+    )'''
     try:
-        with _urllib_request.urlopen(http_req) as resp:
-            return json.loads(resp.read())
+        '''with _urllib_request.urlopen(http_req) as resp:
+            return json.loads(resp.read())'''
+        client = OpenAI(
+            api_key=ANTHROPIC_API_KEY
+        )
+        oai_messages = []
+        for msg in req.messages:
+            if isinstance(msg["content"], list):
+                content = []
+                for block in msg["content"]:
+                    if block["type"] == "text":
+                        content.append({"type": "text", "text": block["text"]})
+                    elif block["type"] == "image":
+                        src = block["source"]
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{src['media_type']};base64,{src['data']}"}
+                        })
+                oai_messages.append({"role": msg["role"], "content": content})
+            else:
+                oai_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            max_tokens=req.max_tokens,
+            messages=oai_messages,
+        )
+        return {
+            "content": [{"type": "text", "text": response.choices[0].message.content}]
+        }
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=502, detail=str(exc))
 
 
