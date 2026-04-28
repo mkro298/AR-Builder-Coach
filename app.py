@@ -341,6 +341,7 @@ ai_reference_prompt="A complete top-down beginner-friendly wiring reference show
 
 PLANS = seed_plans()
 SESSIONS: Dict[str, SessionState] = {}
+DYNAMIC_PLANS: Dict[str, PlanDefinition] = {}
 
 
 # =========================
@@ -1152,8 +1153,113 @@ def health() -> Dict[str, Any]:
 @app.post("/api/plans")
 def get_plans(req: InventoryRequest) -> Dict[str, Any]:
     materials = req.materials or ["breadboard", "arduino nano", "led", "220Ω resistor", "jumper wire", "usb cable"]
-    return {"plans": [item.model_dump() for item in build_plan_summaries(materials)]}
+    print(f"[plans] received materials: {materials}")
+    if not ANTHROPIC_API_KEY: 
+        print("[plans] No API key, falling back to hardcoded plans")
+        return {"plans": [item.model_dump() for item in build_plan_summaries(materials)]}
+    
+    prompt = f"""
+    You are an AR electronics coach for beginners. The user has these materials: {materials}. 
 
+    Generate 2-3 feasible beginner electronics projects they can build using only the materials that they have. For each project, also generate 3-5 step-by-step physical assembly steps.
+
+    Return ONLY a valid JSON object like this: 
+        {{
+    "plans": [
+        {{
+        "id": "dynamic_plan_1",
+        "name": "Blinking LED",
+        "badge": "Beginner",
+        "time_estimate": "10-15m",
+        "description": "A short description of the project.",
+        "required_materials": ["breadboard", "led"],
+        "steps": [
+            {{
+            "id": "step_1",
+            "title": "Place the LED",
+            "subtitle": "Insert the LED into two rows on the breadboard.",
+            "icon": "💡",
+            "goal": "LED is visible on the breadboard with legs in separate rows.",
+            "completion_check": "led_region",
+            "expected_objects": ["breadboard", "led"],
+            "overlay_hint": "Place the LED across two separate rows.",
+            "target_region": {{"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.15}},
+            "instruction_prompt": "Explain how to place an LED on a breadboard.",
+            "ai_reference_prompt": "Top-down image of an LED inserted on a breadboard."
+            }}
+        ]
+        }}
+    ]
+    }}
+
+    Rules:
+    - Only suggest projects buildable with the materials listed. Not every part has to be used but do not assume any other parts are there except for the addition of a breadboard.
+    - completion_check must be one of: led_region, resistor_region, nano_region, scene_match, generic
+    - Steps must be physical, hands-on actions in the correct assembly order.
+    - Keep ALL string values under 20 words
+    - Return ONLY the JSON, no markdown, no explanation.
+    """
+
+    import urllib.request as _urllib_request
+    payload = json.dumps({
+        "model": "claude-opus-4-6",
+        "max_tokens": 4000,
+        "messages": [{"role": "user", "content": prompt}]
+    }).encode()
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+    }
+
+    try:
+        http_req = _urllib_request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload, headers=headers, method="POST"
+        )
+        with _urllib_request.urlopen(http_req) as resp:
+            data = json.loads(resp.read())
+
+        text = data["content"][0]["text"].strip()
+        text = text.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(text)
+        print(f"[plans] claude raw response: {text}")
+        print(f"[plans] parsed {len(parsed.get('plans', []))} plans")
+
+        summaries = []
+        for plan_data in parsed.get("plans", []):
+            steps = [StepDefinition(**s) for s in plan_data.get("steps", [])]
+
+            plan_def = PlanDefinition(
+                id=plan_data["id"],
+                name=plan_data["name"],
+                badge=plan_data["badge"],
+                time_estimate=plan_data["time_estimate"],
+                description=plan_data["description"],
+                required_materials=plan_data.get("required_materials", materials),
+                steps=steps,
+            )
+            DYNAMIC_PLANS[plan_def.id] = plan_def
+
+            summaries.append(PlanSummary(
+                id=plan_def.id,
+                name=plan_def.name,
+                badge=plan_def.badge,
+                time_estimate=plan_def.time_estimate,
+                description=plan_def.description,
+                available=True,
+                missing_parts=[],
+            ).model_dump())
+
+        print(f"[plans] returning summaries: {summaries}")
+        return {"plans": summaries}
+
+    except Exception as exc:
+        print(f"[plans] EXCEPTION: {exc}")
+        import traceback
+        traceback.print_exc()
+        return {"plans": [item.model_dump() for item in build_plan_summaries(materials)]}
 
 @app.post("/api/session/start")
 def start_session(req: StartSessionRequest) -> Dict[str, Any]:
@@ -1161,6 +1267,10 @@ def start_session(req: StartSessionRequest) -> Dict[str, Any]:
 
     if req.plan_id in PLANS:
         plan = PLANS[req.plan_id]
+        steps = plan.steps
+        plan_name = plan.name
+    elif req.plan_id in DYNAMIC_PLANS:         
+        plan = DYNAMIC_PLANS[req.plan_id]
         steps = plan.steps
         plan_name = plan.name
     else:

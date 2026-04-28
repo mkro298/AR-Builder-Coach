@@ -1085,13 +1085,13 @@ Return ONLY the JSON array, nothing else.`
         setError('');
 
         try {
-          const rawParts = (parts && parts.length > 0) ? parts : DEFAULT_INVENTORY;
-          const normalizedParts = classifyMaterials(rawParts);
-          const materialsForRequest = normalizedParts;
+          //const rawParts = (parts && parts.length > 0) ? parts : DEFAULT_INVENTORY;
+          //const normalizedParts = classifyMaterials(parts);
+         // const materialsForRequest = normalizedParts;
 
           const data = await api('/plans', {
             method: 'POST',
-            body: JSON.stringify({ materials: materialsForRequest, preferences: { mode: 'prototype' } })
+            body: JSON.stringify({ materials: detectedParts, preferences: { mode: 'prototype' } })
           });
 
           setPlans(data.plans || []);
@@ -1109,16 +1109,16 @@ Return ONLY the JSON array, nothing else.`
         try {
           const rawParts = (customParts && customParts.length > 0)
             ? customParts
-            : ((detectedParts && detectedParts.length > 0) ? detectedParts : DEFAULT_INVENTORY);
+            : detectedParts;
 
-          const normalizedParts = classifyMaterials(rawParts);
+         // const normalizedParts = classifyMaterials(rawParts);
 
           const session = await api('/session/start', {
             method: 'POST',
             body: JSON.stringify({
               plan_id: plan.id,
               plan_name: plan.name,
-              inventory: normalizedParts,
+              inventory: detectedParts,
               preferences: { ar_mode: 'medium_prototype', source: 'home_or_library_or_draft' }
             })
           });
@@ -1126,11 +1126,11 @@ Return ONLY the JSON array, nothing else.`
           setSelectedPlan(plan);
           setSessionData(session);
           setAnalysis(session.last_analysis || null);
-          setDetectedParts(normalizedParts);
+          //setDetectedParts(normalizedParts);
           setScreen(4);
 
           if (shouldSaveDraft) {
-            const newDraft = makeDraftFromPlan(plan, normalizedParts);
+            const newDraft = makeDraftFromPlan(plan, detectedParts);
             const nextDrafts = upsertDraft(drafts, newDraft);
             persistDrafts(nextDrafts);
           }
