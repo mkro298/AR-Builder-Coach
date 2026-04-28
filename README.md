@@ -36,15 +36,15 @@ The current codebase uses **two different paths**:
 ### Local backend path
 Screens 3 and 4 rely on the local FastAPI backend in `app.py`.
 
-### Direct browser scanning path
-The screen 2 scanning UI in `index.html` currently performs image analysis through a **direct browser-side external API call**, rather than sending scan frames to `app.py`.
+### Backend-proxied scanning path
+The screen 2 scanning UI in `index.html` captures camera frames in the browser and sends them to the FastAPI backend proxy, which then forwards the request to the external vision model API. The browser does not call the external provider directly.
 
 Because of this, there are two ways staff may reproduce the prototype:
 
 - **Full UI path**: run frontend + backend, allow camera access, and use the scan flow normally
 - **Backend-supported path**: run frontend + backend and continue using the default inventory behavior even if screen 2 scanning is unavailable in the staff environment
 
-This means that even if browser-side scanning is blocked, the staff can still reproduce the core implementation prototype for feasible plans, guided steps, overlays, session progression, and reference wiring.
+This means that even if scanning is unavailable in the staff environment, the staff can still reproduce the core implementation prototype for feasible plans, guided steps, overlays, session progression, and reference wiring.
 
 ---
 
@@ -60,11 +60,11 @@ Recommended:
 Internet is needed because:
 
 - the frontend loads React, ReactDOM, Babel, and Tailwind from CDNs
-- the current screen 2 scanning implementation uses an external browser-side API
+- the current screen 2 scanning implementation relies on a backend proxy to reach an external vision API
 
 Optional:
 
-- an OpenAI API key for backend-generated short instructions and reference images.Without an OpenAI key, the backend still runs. In that case it uses built-in step subtitles and falls back to a locally generated SVG reference image. 
+- an OpenAI API key for backend-generated short instructions, reference images, and screen 4 GPT-based step validation. Without an OpenAI key, the backend still runs. In that case it uses built-in step subtitles, falls back to a locally generated SVG reference image, and screen 4 step completion checking must be done manually with the **Next** button.
 
 ---
 
@@ -112,6 +112,7 @@ cp env.example .env
 Expected values:
 
 ```env
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_TEXT_MODEL=gpt-4.1-mini
 OPENAI_IMAGE_MODEL=gpt-image-1
@@ -123,6 +124,8 @@ Notes:
 
 - `OPENAI_API_KEY` is optional
 - if it is missing, the prototype still runs
+- without it, screen 4 GPT-based automatic step validation will not work, and the user must proceed manually with `Next`
+- `ANTHROPIC_API_KEY` is required for the current screen 2 scanning flow
 - the backend health check will show whether OpenAI is configured
 
 ---
@@ -152,7 +155,14 @@ Expected JSON shape:
 {
   "status": "ok",
   "openai_configured": true,
-  "available_plans": ["plan_a", "plan_c"]
+  "anthropic_configured": true,
+  "available_plans": [
+    "blinking_led",
+    "button_led",
+    "mini_alarm",
+    "temperature_display",
+    "robot_car"
+  ]
 }
 ```
 
